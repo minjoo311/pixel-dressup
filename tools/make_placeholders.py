@@ -207,6 +207,14 @@ def make_underwear():
     save(uw, "base/underwear.png")
 
 
+def make_underwear_m():
+    rmp = ramp("#4a5878")
+    briefs = rows(TORSO, 83, 92) | rows(LEGS, 88, 93)
+    uw = shade(briefs, rmp)
+    paint(uw, briefs & rows(ALL, 84, 84) & ~edge(briefs), hx("#e8e4dc"))
+    save(uw, "base/underwear_m.png")
+
+
 def make_shadow():
     im = Image.new("RGBA", (W, 12), (0, 0, 0, 0))
     ImageDraw.Draw(im).ellipse((40, 2, 87, 9), fill=(40, 26, 30, 255))
@@ -241,6 +249,16 @@ def face(kind, blink=False):
         paint(img, rect((62, 42, 65, 45)), dark)
         paint(img, rect((63, 43, 64, 44)), (0xC8, 0x4B, 0x5A))
     # 눈썹
+    if kind == "happy":
+        img[:] = 0
+        arc = rect((54, 36, 54, 36)) | rect((55, 35, 55, 35)) | rect((56, 34, 56, 34)) | rect((57, 35, 57, 35)) | rect((58, 36, 58, 36))
+        paint(img, sym(arc), dark)
+        paint(img, sym(rect((51, 39, 54, 40))), (0xF0, 0x96, 0x9A))
+        paint(img, rect((60, 42, 67, 42)) | rect((61, 45, 66, 45)) | rect((60, 43, 60, 44)) | rect((67, 43, 67, 44)), dark)
+        paint(img, rect((61, 43, 66, 44)), (0xC8, 0x4B, 0x5A))
+        paint(img, rect((62, 43, 65, 43)), (255, 255, 255))
+        paint(img, sym(rect((54, 30, 57, 30))), hair[1])
+        return img
     if kind == "wow":
         paint(img, sym(rect((54, 29, 57, 29))), hair[1])
     else:
@@ -249,7 +267,7 @@ def face(kind, blink=False):
 
 
 def make_faces():
-    for k in ("smile", "neutral", "wink", "wow"):
+    for k in ("smile", "neutral", "wink", "wow", "happy"):
         save(face(k), f"face/{k}.png")
         save(face(k, blink=True), f"face/{k}_blink.png")
 
@@ -757,9 +775,53 @@ ICONS = {
           "..XX.XX..", ".XX...XX.", "XX.....XX", "........."],
     "palette": ["..XXXXX..", ".X.....X.", "X.X.X...X", "X.......X", "X.X...XX.",
                 "X.....X..", ".X...X...", "..XXX....", "........."],
+    "rec": [".........", "..XXXXX..", ".XXXXXXX.", ".XXXXXXX.", ".XXXXXXX.",
+            ".XXXXXXX.", ".XXXXXXX.", "..XXXXX..", "........."],
+    "stop": [".........", ".XXXXXXX.", ".XXXXXXX.", ".XXXXXXX.", ".XXXXXXX.",
+             ".XXXXXXX.", ".XXXXXXX.", ".XXXXXXX.", "........."],
+    "star": ["....X....", "...XXX...", "XXXXXXXXX", ".XXXXXXX.", "..XXXXX..",
+             "..XX.XX..", ".XX...XX.", ".X.....X.", "........."],
+    "plus": [".........", "...XXX...", "...XXX...", "XXXXXXXXX", "XXXXXXXXX",
+             "XXXXXXXXX", "...XXX...", "...XXX...", "........."],
+    "menu": [".........", "XXXXXXXXX", "XXXXXXXXX", ".........", "XXXXXXXXX",
+             "XXXXXXXXX", ".........", "XXXXXXXXX", "XXXXXXXXX"],
+    "brush": [".......XX", "......XXX", ".....XXX.", "....XXX..", "...XX....",
+              "..XXX....", ".XXX.....", "XXX......", "XX......."],
     "check": [".........", ".......XX", "......XX.", "X....XX..", "XX..XX...",
               ".XXXX....", "..XX.....", ".........", "........."],
 }
+
+
+BRUSH = [
+    "...........XX.",
+    "..........XwwX",
+    ".........XwwX.",
+    "........XwwX..",
+    ".......XwwX...",
+    "......XwwX....",
+    ".....XggX.....",
+    "....XgggX.....",
+    "...XtttX......",
+    "..XtTttX......",
+    ".XtTttX.......",
+    ".XTttX........",
+    "XTtXX.........",
+    "XXX...........",
+]
+
+
+def make_brush():
+    pal = {
+        "X": (*OUTLINE, 255), "w": (0xC9, 0x8A, 0x5A, 255), "g": (0xC8, 0xC4, 0xD0, 255),
+        # 붓끝: 게임에서 선택한 색으로 바꿔 칠하는 키 색 (마젠타 계열)
+        "t": (0xFF, 0x00, 0xFF, 255), "T": (0xFF, 0x80, 0xFF, 255),
+    }
+    im = Image.new("RGBA", (14, 14), (0, 0, 0, 0))
+    for y, r in enumerate(BRUSH):
+        for x, ch in enumerate(r):
+            if ch in pal:
+                im.putpixel((x, y), pal[ch])
+    im.save(os.path.join(A, "ui/brush.png"))
 
 
 def make_icons():
@@ -791,6 +853,8 @@ if __name__ == "__main__":
     make_backgrounds()
     make_cursors()
     make_icons()
+    make_brush()
+    make_underwear_m()
     with open(os.path.join(ROOT, "data/items.json"), "w", encoding="utf-8") as f:
         json.dump(ITEMS, f, ensure_ascii=False, indent=2)
     print(f"ok: {len(ITEMS)} items")

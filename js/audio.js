@@ -152,7 +152,56 @@ export class Sound {
       case "error":
         T({ freq: 200, dur: 0.12, vol: 0.18 });
         break;
+      case "brushOn":
+        T({ freq: NOTE(79), dur: 0.05, vol: 0.18, wave: "p25" });
+        T({ freq: NOTE(86), t: 0.05, dur: 0.05, vol: 0.18, wave: "p25" });
+        T({ freq: NOTE(91), t: 0.1, dur: 0.08, vol: 0.16, wave: "p12" });
+        break;
+      case "brushOff":
+        T({ freq: NOTE(86), dur: 0.05, vol: 0.16, wave: "p25" });
+        T({ freq: NOTE(79), t: 0.05, dur: 0.07, vol: 0.16, wave: "p25" });
+        break;
+      case "paint":
+        // 슈욱~ 철퍽!
+        this._noise({ dur: 0.12, vol: 0.22, hp: 900 });
+        T({ freq: 300, freqEnd: 900, dur: 0.1, vol: 0.14, wave: "p12" });
+        T({ freq: NOTE(84), t: 0.1, dur: 0.05, vol: 0.18, wave: "p25" });
+        T({ freq: NOTE(88), t: 0.15, dur: 0.05, vol: 0.18, wave: "p25" });
+        T({ freq: NOTE(91), t: 0.2, dur: 0.12, vol: 0.18, wave: "p25" });
+        break;
+      case "puff":
+        this._noise({ dur: 0.08, vol: 0.14, hp: 500 });
+        break;
+      case "fanfare": {
+        // 짜라란~!
+        const seq = [[67, 0], [72, 0.08], [76, 0.16], [79, 0.24], [84, 0.36]];
+        seq.forEach(([m, t]) => T({ freq: NOTE(m), t, dur: m === 84 ? 0.5 : 0.08, vol: 0.22, wave: "p25" }));
+        [76, 79].forEach((m) => T({ freq: NOTE(m), t: 0.36, dur: 0.5, vol: 0.1, wave: "p12" }));
+        T({ freq: NOTE(48), t: 0.36, dur: 0.5, vol: 0.3, wave: "triangle" });
+        [0.9, 1.0, 1.1].forEach((t, i) => T({ freq: NOTE(96 + i * 4), t, dur: 0.05, vol: 0.08, wave: "p12" }));
+        break;
+      }
+      case "count":
+        T({ freq: NOTE(81), dur: 0.08, vol: 0.2, wave: "p25" });
+        break;
+      case "recStart":
+        T({ freq: NOTE(93), dur: 0.18, vol: 0.2, wave: "p25" });
+        break;
+      case "recStop":
+        T({ freq: NOTE(88), dur: 0.06, vol: 0.2, wave: "p25" });
+        T({ freq: NOTE(81), t: 0.07, dur: 0.12, vol: 0.2, wave: "p25" });
+        break;
     }
+  }
+
+  // 녹화용: 게임 소리를 MediaStream으로도 내보냄
+  streamDest() {
+    if (!this.ctx) return null;
+    if (!this._dest) {
+      this._dest = this.ctx.createMediaStreamDestination();
+      this.master.connect(this._dest);
+    }
+    return this._dest;
   }
 
   // ------------------------------------------------------------ BGM

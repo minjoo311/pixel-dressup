@@ -1,4 +1,10 @@
 import { Sound } from "./audio.js";
+import { Recorder } from "./recorder.js";
+import { initAdmin, openAdmin } from "./admin.js";
+import {
+  $, el, esc, hexToInt, rgbInt, clamp01, rgbToHsl, hslToRgb, hexToHsl,
+  loadImage, getImg, toCanvas, pixels, alphaAt, bbox, thumb, pixelText, store, idb,
+} from "./util.js";
 
 // ================================================================ constants
 const STAGE_W = 160;
@@ -9,25 +15,25 @@ const AV_Y = 56;
 const HAIR = "__hair_front";
 const STORE_CUR = "pixelcloset.v1.current";
 const STORE_SLOTS = "pixelcloset.v1.slots";
+const STORE_RECENT = "pixelcloset.v1.recentColors";
 const SLOT_COUNT = 3;
-
-const $ = (s, el = document) => el.querySelector(s);
-const el = (tag, cls, html) => {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (html != null) e.innerHTML = html;
-  return e;
-};
+const BRUSH_BTN = { x: 138, y: 4, w: 18, h: 18 };
+const REC_SCALE = 6; // 녹화 해상도 960×1152
 
 // ================================================================ data
-let OPT, ITEMS, ITEM_BY_ID, CAT_BY_KEY;
-const images = new Map();
+let OPT, BASE_ITEMS, BASE_BGS, ITEMS, ITEM_BY_ID, CAT_BY_KEY, VARIANTS;
+let MANIFEST = { items: [], backgrounds: [], variants: [] };
+let LOCALS = [];
+const objectURLs = new Map();
 let sound;
+let recorder;
 
 const state = {
+  bodyType: "regular",
   skin: "medium",
   hairStyle: "long",
   hairColor: "brown",
+  hairShift: null,
   face: "smile",
   background: "room",
   worn: [{ id: HAIR }], // 앞 = 안쪽, 뒤 = 바깥
@@ -39,85 +45,54 @@ const ui = {
   blinkUntil: 0,
   nextBlink: 0,
   bounceAt: -9999,
+  jumpAt: -9999,
   colorIndex: -1,
+  paint: false,
+  paintColor: "#f08fb0",
+  pointer: null, // { x, y, mouse }
+  tapBrush: null, // { x, y, at }
+  fx: [],
+  happy: false,
+  celebrateAt: -9999,
+  flashes: [],
+  lastT: 0,
 };
 
-// ================================================================ helpers: color
-const hexToInt = (h) => parseInt(h.replace("#", ""), 16);
-const rgbInt = (r, g, b) => (r << 16) | (g << 8) | b;
+// ================================================================ color / recolor
+let OUTLINE_SET = new Set();
+const recolorCache = new Map();
 
-function rgbToHsl(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h = 0, s = 0;
-  const l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60;
+function recolorSource(key, source, hue = 0, sat = 0, light = 0) {
+  if (!source) return null;
+  if (!hue && !sat && !light) return source;
+  const k = `${key}|${hue}|${sat}|${light}`;
+  if (recolorCache.has(k)) return recolorCache.get(k);
+  const c = toCanvas(source);
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  const data = ctx.getImageData(0, 0, c.width, c.height);
+  const d = data.data;
+  const ds = sat / 100, dl = light / 100;
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    if (OUTLINE_SET.has(rgbInt(d[i], d[i + 1], d[i + 2]))) continue;
+    const [h, s, l] = rgbToHsl(d[i], d[i + 1], d[i + 2]);
+    const [r, g, b] = hslToRgb(h + hue, clamp01(s + ds), clamp01(l + dl));
+    d[i] = r; d[i + 1] = g; d[i + 2] = b;
   }
-  return [h, s, l];
-}
-
-function hslToRgb(h, s, l) {
-  h = ((h % 360) + 360) % 360 / 360;
-  if (s === 0) {
-    const v = Math.round(l * 255);
-    return [v, v, v];
-  }
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  const f = (t) => {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-  return [Math.round(f(h + 1 / 3) * 255), Math.round(f(h) * 255), Math.round(f(h - 1 / 3) * 255)];
-}
-
-const clamp01 = (v) => Math.max(0, Math.min(1, v));
-
-// ================================================================ helpers: images
-function loadImage(src) {
-  if (images.has(src)) return images.get(src).promise;
-  const im = new Image();
-  const rec = { im, ok: false };
-  rec.promise = new Promise((res) => {
-    im.onload = () => { rec.ok = true; res(im); };
-    im.onerror = () => { console.warn("이미지를 찾을 수 없어요:", src); res(null); };
-  });
-  im.src = src;
-  images.set(src, rec);
-  return rec.promise;
-}
-const getImg = (src) => {
-  const r = src && images.get(src);
-  return r && r.ok ? r.im : null;
-};
-
-function toCanvas(im) {
-  const c = document.createElement("canvas");
-  c.width = im.width;
-  c.height = im.height;
-  c.getContext("2d").drawImage(im, 0, 0);
+  ctx.putImageData(data, 0, 0);
+  if (recolorCache.size > 400) recolorCache.clear();
+  recolorCache.set(k, c);
   return c;
 }
 
 const swapCache = new Map();
-// 예약색(_source)을 선택한 램프 색으로 교체
 function paletteSwap(src, fromHex, toHex) {
   const key = `${src}|${toHex.join(",")}`;
   if (swapCache.has(key)) return swapCache.get(key);
   const im = getImg(src);
   if (!im) return null;
   const c = toCanvas(im);
-  const ctx = c.getContext("2d");
+  const ctx = c.getContext("2d", { willReadFrequently: true });
   const data = ctx.getImageData(0, 0, c.width, c.height);
   const map = new Map(fromHex.map((f, i) => [hexToInt(f), hexToInt(toHex[i])]));
   const d = data.data;
@@ -133,39 +108,12 @@ function paletteSwap(src, fromHex, toHex) {
   return c;
 }
 
-let OUTLINE_SET = new Set();
-const recolorCache = new Map();
-function recolor(src, hue = 0, sat = 0, light = 0) {
-  const im = getImg(src);
-  if (!im) return null;
-  if (!hue && !sat && !light) return im;
-  const key = `${src}|${hue}|${sat}|${light}`;
-  if (recolorCache.has(key)) return recolorCache.get(key);
-  const c = toCanvas(im);
-  const ctx = c.getContext("2d");
-  const data = ctx.getImageData(0, 0, c.width, c.height);
-  const d = data.data;
-  const ds = sat / 100, dl = light / 100;
-  for (let i = 0; i < d.length; i += 4) {
-    if (!d[i + 3]) continue;
-    if (OUTLINE_SET.has(rgbInt(d[i], d[i + 1], d[i + 2]))) continue;
-    const [h, s, l] = rgbToHsl(d[i], d[i + 1], d[i + 2]);
-    const [r, g, b] = hslToRgb(h + hue, clamp01(s + ds), clamp01(l + dl));
-    d[i] = r; d[i + 1] = g; d[i + 2] = b;
-  }
-  ctx.putImageData(data, 0, 0);
-  if (recolorCache.size > 300) recolorCache.clear();
-  recolorCache.set(key, c);
-  return c;
-}
-
 const avgCache = new Map();
-// 아이템의 대표 색 (외곽선 제외 평균)
 function avgHsl(src) {
   if (avgCache.has(src)) return avgCache.get(src);
   const im = getImg(src);
   if (!im) return [0, 0, 0.5];
-  const d = toCanvas(im).getContext("2d").getImageData(0, 0, im.width, im.height).data;
+  const d = pixels(im).data;
   let r = 0, g = 0, b = 0, n = 0;
   for (let i = 0; i < d.length; i += 4) {
     if (!d[i + 3] || OUTLINE_SET.has(rgbInt(d[i], d[i + 1], d[i + 2]))) continue;
@@ -176,59 +124,161 @@ function avgHsl(src) {
   return v;
 }
 
-const bboxCache = new Map();
-function bbox(src) {
-  if (bboxCache.has(src)) return bboxCache.get(src);
-  const im = getImg(src);
-  if (!im) return null;
-  const d = toCanvas(im).getContext("2d").getImageData(0, 0, im.width, im.height).data;
-  let x0 = im.width, y0 = im.height, x1 = -1, y1 = -1;
-  for (let y = 0; y < im.height; y++) {
-    for (let x = 0; x < im.width; x++) {
-      if (d[(y * im.width + x) * 4 + 3]) {
-        if (x < x0) x0 = x; if (x > x1) x1 = x;
-        if (y < y0) y0 = y; if (y > y1) y1 = y;
-      }
+// 대표 색(avg) → 목표 색(hex)으로 가는 색조/채도/밝기 이동량
+function shiftTo(avg, hex) {
+  const [th, ts, tl] = hexToHsl(hex);
+  const [ah, as, al] = avg;
+  let dh = Math.round(th - ah);
+  dh = ((dh + 540) % 360) - 180;
+  return {
+    hue: dh,
+    sat: Math.round(Math.max(-100, Math.min(100, (ts - as) * 100))),
+    light: Math.round(Math.max(-60, Math.min(60, (tl - al) * 100))),
+  };
+}
+const itemShift = (it, hex) => shiftTo(avgHsl(it.src), hex);
+
+// ================================================================ body types (자동 변형)
+const bodyTypes = () => OPT.bodyTypes || [{ id: "regular", name: "보통", warp: [] }];
+const bodyTypeOf = (id) => bodyTypes().find((b) => b.id === id) || bodyTypes()[0];
+
+let CORE_L = null, CORE_R = null;
+// 기준 바디에서 행마다 "몸통/다리" 반폭을 측정 (팔은 몸통 밖이면 평행이동, 몸통은 늘어남)
+function measureCore() {
+  const im = getImg(OPT.body.body);
+  CORE_L = new Int16Array(AV);
+  CORE_R = new Int16Array(AV);
+  if (!im) return;
+  const { data: d } = pixels(im);
+  const a = (x, y) => d[(y * AV + x) * 4 + 3];
+  for (let y = 0; y < AV; y++) {
+    let x = 63, skip = 0;
+    while (x >= 0 && !a(x, y) && skip < 8) { x--; skip++; }
+    if (x < 0 || !a(x, y)) { CORE_L[y] = 0; } else {
+      while (x >= 0 && a(x, y)) x--;
+      CORE_L[y] = 64 - (x + 1);
+    }
+    x = 64; skip = 0;
+    while (x < AV && !a(x, y) && skip < 8) { x++; skip++; }
+    if (x >= AV || !a(x, y)) { CORE_R[y] = 0; } else {
+      while (x < AV && a(x, y)) x++;
+      CORE_R[y] = x - 64;
     }
   }
-  const b = x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
-  bboxCache.set(src, b);
-  return b;
 }
 
-// 정수배 확대 썸네일
-function thumb(source, box, maxPx = 52) {
+function deltaAt(keys, y) {
+  if (!keys || !keys.length) return 0;
+  if (y <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    const [y1, d1] = keys[i];
+    if (y <= y1) {
+      const [y0, d0] = keys[i - 1];
+      return d0 + ((d1 - d0) * (y - y0)) / (y1 - y0);
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+
+const warpMaps = new Map();
+function warpMap(typeId) {
+  if (warpMaps.has(typeId)) return warpMaps.get(typeId);
+  const bt = bodyTypeOf(typeId);
+  if (!bt.warp || !bt.warp.length) {
+    warpMaps.set(typeId, null);
+    return null;
+  }
+  const map = new Int16Array(AV * AV).fill(-1);
+  for (let y = 0; y < AV; y++) {
+    const dd = Math.round(deltaAt(bt.warp, y));
+    for (let x = 0; x < AV; x++) {
+      const p = x + 0.5;
+      let s;
+      if (!dd) s = p;
+      else if (p < 64) {
+        const h = CORE_L[y];
+        if (h <= 0) s = p;
+        else if (p < 64 - h - dd) s = p + dd;
+        else s = 64 - ((64 - p) * h) / Math.max(1, h + dd);
+      } else {
+        const h = CORE_R[y];
+        if (h <= 0) s = p;
+        else if (p >= 64 + h + dd) s = p - dd;
+        else s = 64 + ((p - 64) * h) / Math.max(1, h + dd);
+      }
+      const sx = Math.floor(s);
+      map[y * AV + x] = sx >= 0 && sx < AV ? sx : -1;
+    }
+  }
+  warpMaps.set(typeId, map);
+  return map;
+}
+
+const warpCache = new WeakMap();
+function warp(source, typeId) {
+  if (!source) return null;
+  const map = warpMap(typeId);
+  if (!map || source.width !== AV || source.height !== AV) return source;
+  let per = warpCache.get(source);
+  if (!per) warpCache.set(source, (per = new Map()));
+  if (per.has(typeId)) return per.get(typeId);
+  const src = pixels(source).data;
   const c = document.createElement("canvas");
-  c.className = "pixel";
-  if (!source || !box) return c;
-  c.width = box.w;
-  c.height = box.h;
-  c.getContext("2d").drawImage(source, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
-  const big = Math.max(box.w, box.h);
-  const s = big * 1 > maxPx ? maxPx / big : Math.max(1, Math.floor(maxPx / big));
-  c.style.width = `${box.w * s}px`;
-  c.style.height = `${box.h * s}px`;
+  c.width = c.height = AV;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  const out = ctx.createImageData(AV, AV);
+  const o = out.data;
+  for (let y = 0; y < AV; y++) {
+    for (let x = 0; x < AV; x++) {
+      const sx = map[y * AV + x];
+      if (sx < 0) continue;
+      const si = (y * AV + sx) * 4, di = (y * AV + x) * 4;
+      o[di] = src[si]; o[di + 1] = src[si + 1]; o[di + 2] = src[si + 2]; o[di + 3] = src[si + 3];
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+  per.set(typeId, c);
   return c;
 }
 
-// ================================================================ avatar rendering
-const avCanvas = document.createElement("canvas");
-avCanvas.width = AV;
-avCanvas.height = AV;
-const avCtx = avCanvas.getContext("2d");
-
-const stageCanvas = document.createElement("canvas");
-stageCanvas.width = STAGE_W;
-stageCanvas.height = STAGE_H;
-const stageCtx = stageCanvas.getContext("2d");
-
+// ================================================================ layers
 const findBy = (arr, id) => arr.find((x) => x.id === id) || arr[0];
 
-function skinLayer(src) {
-  return paletteSwap(src, OPT.skinRamps._source, OPT.skinRamps[state.skin] || OPT.skinRamps._source);
+function bodyLayer(st) {
+  const bt = bodyTypeOf(st.bodyType);
+  const ramp = OPT.skinRamps[st.skin] || OPT.skinRamps._source;
+  if (bt.body) return paletteSwap(bt.body, OPT.skinRamps._source, ramp);
+  return warp(paletteSwap(OPT.body.body, OPT.skinRamps._source, ramp), st.bodyType);
 }
-function hairLayer(src) {
-  return paletteSwap(src, OPT.hairRamps._source, OPT.hairRamps[state.hairColor] || OPT.hairRamps._source);
+
+function underwearLayer(st) {
+  const bt = bodyTypeOf(st.bodyType);
+  if (bt.body && bt.underwear) return getImg(bt.underwear);
+  return warp(getImg(bt.underwear || OPT.body.underwear), st.bodyType);
+}
+
+function hairAvg(st) {
+  const ramp = OPT.hairRamps[st.hairColor] || OPT.hairRamps._source;
+  return hexToHsl(ramp[1]);
+}
+
+function hairLayer(st, which) {
+  const hair = findBy(OPT.hairStyles, st.hairStyle);
+  const ramp = OPT.hairRamps[st.hairColor] || OPT.hairRamps._source;
+  const src = which === "back" ? hair.back : hair.front;
+  const swapped = paletteSwap(src, OPT.hairRamps._source, ramp);
+  const sh = st.hairShift || {};
+  const tinted = recolorSource(`hair|${src}|${st.hairColor}`, swapped, sh.hue, sh.sat, sh.light);
+  return warp(tinted, st.bodyType);
+}
+
+function itemLayer(e, st, srcOverride) {
+  const it = ITEM_BY_ID[e.id];
+  if (!it) return null;
+  const vsrc = !srcOverride && VARIANTS[it.id] && VARIANTS[it.id][st.bodyType];
+  const src = srcOverride || vsrc || it.src;
+  const colored = recolorSource(src, getImg(src), e.hue, e.sat, e.light);
+  return vsrc ? colored : warp(colored, st.bodyType);
 }
 
 function hiddenSet(worn) {
@@ -240,40 +290,258 @@ function hiddenSet(worn) {
   return s;
 }
 
-function composeAvatar(ctx, st, { blink = false } = {}) {
-  ctx.clearRect(0, 0, AV, AV);
-  const hair = findBy(OPT.hairStyles, st.hairStyle);
-  const face = findBy(OPT.faces, st.face);
+// 그려지는 순서대로 레이어 목록 (히트 테스트에도 사용)
+function layerStack(st, { blink = false, faceOverride = null, extra = null } = {}) {
+  const out = [];
   const hidden = hiddenSet(st.worn);
-  const prevSkin = state.skin, prevHair = state.hairColor;
-  state.skin = st.skin; state.hairColor = st.hairColor; // 썸네일 렌더용 임시 전환
-  const draw = (c) => c && ctx.drawImage(c, 0, 0);
-
-  if (!hidden.has("hair_back")) draw(hairLayer(hair.back));
+  const face = findBy(OPT.faces, faceOverride || st.face);
+  if (!hidden.has("hair_back")) out.push({ kind: "hair", canvas: hairLayer(st, "back") });
   for (const e of st.worn) {
     const it = ITEM_BY_ID[e.id];
-    if (it && it.extraLayers) it.extraLayers.filter((l) => (l.z ?? 0) < 20).forEach((l) => draw(recolor(l.src, e.hue, e.sat, e.light)));
+    if (it && it.extraLayers) {
+      it.extraLayers.filter((l) => (l.z ?? 0) < 20)
+        .forEach((l) => out.push({ kind: "item", entry: e, canvas: itemLayer(e, st, l.src) }));
+    }
   }
-  draw(skinLayer(OPT.body.body));
-  draw(getImg(OPT.body.underwear));
-  draw(getImg(blink && face.blink ? face.blink : face.src));
+  out.push({ kind: "body", canvas: bodyLayer(st) });
+  out.push({ kind: "body", canvas: underwearLayer(st) });
+  out.push({ kind: "face", canvas: warp(getImg(blink && face.blink ? face.blink : face.src), st.bodyType) });
   for (const e of st.worn) {
     if (e.id === HAIR) {
-      if (!hidden.has("hair_front")) draw(hairLayer(hair.front));
+      if (!hidden.has("hair_front")) out.push({ kind: "hair", canvas: hairLayer(st, "front") });
       continue;
     }
     const it = ITEM_BY_ID[e.id];
     if (!it || hidden.has(it.category)) continue;
-    if (it.extraLayers) it.extraLayers.filter((l) => (l.z ?? 0) >= 20).forEach((l) => draw(recolor(l.src, e.hue, e.sat, e.light)));
-    draw(recolor(it.src, e.hue, e.sat, e.light));
+    if (it.extraLayers) {
+      it.extraLayers.filter((l) => (l.z ?? 0) >= 20)
+        .forEach((l) => out.push({ kind: "item", entry: e, canvas: itemLayer(e, st, l.src) }));
+    }
+    out.push({ kind: "item", entry: e, canvas: itemLayer(e, st) });
   }
-  state.skin = prevSkin; state.hairColor = prevHair;
+  if (extra) out.push({ kind: "extra", canvas: extra });
+  return out;
 }
 
-function renderStage(ctx, t, st = state, { motion = true } = {}) {
+function composeAvatar(ctx, st, opts = {}) {
+  ctx.clearRect(0, 0, AV, AV);
+  for (const l of layerStack(st, opts)) if (l.canvas) ctx.drawImage(l.canvas, 0, 0);
+}
+
+// ================================================================ stage rendering
+const avCanvas = document.createElement("canvas");
+avCanvas.width = avCanvas.height = AV;
+const avCtx = avCanvas.getContext("2d");
+
+const stageCanvas = document.createElement("canvas");
+stageCanvas.width = STAGE_W;
+stageCanvas.height = STAGE_H;
+const stageCtx = stageCanvas.getContext("2d");
+
+function avatarOffset(t) {
+  let y = 0;
+  const dj = t - ui.jumpAt;
+  if (dj >= 0 && dj < 420) y -= Math.round(9 * Math.sin((Math.PI * dj) / 420));
+  else {
+    const dt = t - ui.bounceAt;
+    if (dt < 80) y -= 2;
+    else if (dt < 160) y -= 1;
+  }
+  return y;
+}
+
+const brushTint = new Map();
+function brushSprite(color) {
+  if (brushTint.has(color)) return brushTint.get(color);
+  const im = getImg("assets/ui/brush.png");
+  if (!im) return null;
+  const c = toCanvas(im);
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  const data = ctx.getImageData(0, 0, c.width, c.height);
+  const d = data.data;
+  const [h, s, l] = hexToHsl(color);
+  const main = hslToRgb(h, s, l), hi = hslToRgb(h, s, Math.min(1, l + 0.18));
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    if (d[i] === 255 && d[i + 1] === 0 && d[i + 2] === 255) [d[i], d[i + 1], d[i + 2]] = main;
+    else if (d[i] === 255 && d[i + 1] === 128 && d[i + 2] === 255) [d[i], d[i + 1], d[i + 2]] = hi;
+  }
+  ctx.putImageData(data, 0, 0);
+  brushTint.set(color, c);
+  return c;
+}
+
+function drawBrushButton(ctx, t) {
+  const { x, y, w, h } = BRUSH_BTN;
+  const on = ui.paint;
+  const off = on ? 1 : 0;
+  if (!on) {
+    ctx.fillStyle = "#2b1d1a";
+    ctx.fillRect(x + 1, y + 1, w, h);
+  }
+  ctx.fillStyle = "#2b1d1a";
+  ctx.fillRect(x + off, y + off, w, h);
+  ctx.fillStyle = on ? "#fbd3e1" : "#fff8f0";
+  ctx.fillRect(x + off + 1, y + off + 1, w - 2, h - 2);
+  // 붓을 들고 있으면 버튼엔 색 방울만
+  if (on) {
+    ctx.fillStyle = ui.paintColor;
+    ctx.fillRect(x + off + 6, y + off + 6, 6, 6);
+    ctx.fillStyle = "#2b1d1a";
+    ctx.fillRect(x + off + 6, y + off + 5, 6, 1);
+    ctx.fillRect(x + off + 6, y + off + 12, 6, 1);
+    ctx.fillRect(x + off + 5, y + off + 6, 1, 6);
+    ctx.fillRect(x + off + 12, y + off + 6, 1, 6);
+  } else {
+    const b = brushSprite(ui.paintColor);
+    const bob = Math.floor(t / 500) % 2;
+    if (b) ctx.drawImage(b, x + 2, y + 2 - bob);
+  }
+}
+
+function drawSparkle(ctx, x, y, size, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x - size, y, size * 2 + 1, 1);
+  ctx.fillRect(x, y - size, 1, size * 2 + 1);
+  if (size > 1) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(x, y, 1, 1);
+  }
+}
+
+function updateFx(ctx, t, dt) {
+  ui.fx = ui.fx.filter((p) => t - p.t0 < p.life);
+  for (const p of ui.fx) {
+    const age = (t - p.t0) / p.life;
+    if (p.type === "spark") {
+      const size = age < 0.3 ? 1 : age < 0.7 ? 2 : 1;
+      drawSparkle(ctx, Math.round(p.x), Math.round(p.y), size, "#ffd666");
+      continue;
+    }
+    p.vy += (p.g || 0) * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.type === "confetti" && Math.floor((t - p.t0) / 120) % 2) {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 2);
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size || 1, p.size || 1);
+    }
+  }
+}
+
+function addSplash(x, y, color) {
+  const t = performance.now();
+  for (let i = 0; i < 14; i++) {
+    const a = (Math.PI * 2 * i) / 14 + Math.random() * 0.3;
+    const sp = 0.03 + Math.random() * 0.05;
+    ui.fx.push({ type: "drop", x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.03, g: 0.00018, color, t0: t, life: 420 + Math.random() * 200, size: Math.random() < 0.4 ? 2 : 1 });
+  }
+  ui.fx.push({ type: "spark", x, y: y - 3, t0: t, life: 380 });
+}
+
+function addPuff(x, y) {
+  const t = performance.now();
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI * 2 * i) / 6;
+    ui.fx.push({ type: "drop", x, y, vx: Math.cos(a) * 0.025, vy: Math.sin(a) * 0.025, color: "#cfc6c6", t0: t, life: 260, size: 1 });
+  }
+}
+
+function addConfetti() {
+  const t = performance.now();
+  const colors = ["#f08fb0", "#f6d97a", "#8fd3c6", "#c9b6e4", "#ffffff", "#e05a5a", "#7ea6d6"];
+  for (let i = 0; i < 70; i++) {
+    ui.fx.push({
+      type: "confetti", x: Math.random() * STAGE_W, y: -10 - Math.random() * 60,
+      vx: (Math.random() - 0.5) * 0.02, vy: 0.03 + Math.random() * 0.04, g: 0.00002,
+      color: colors[i % colors.length], t0: t, life: 2600 + Math.random() * 900, size: 2,
+    });
+  }
+}
+
+function drawCelebration(ctx, t) {
+  const dt = t - ui.celebrateAt;
+  if (dt < 0 || dt > 3600) return;
+  // 사진 촬영 프레임 (모서리 괄호)
+  if (dt > 350 && dt < 1900) {
+    ctx.fillStyle = "#ffffff";
+    const m = 6, L = 10;
+    for (const [x, y, sx, sy] of [[m, m, 1, 1], [STAGE_W - m, m, -1, 1], [m, STAGE_H - m, 1, -1], [STAGE_W - m, STAGE_H - m, -1, -1]]) {
+      ctx.fillRect(sx > 0 ? x : x - L, sy > 0 ? y : y - 2, L, 2);
+      ctx.fillRect(sx > 0 ? x : x - 2, sy > 0 ? y : y - L, 2, L);
+    }
+    if (Math.floor(dt / 300) % 2) {
+      ctx.fillStyle = "#e05a5a";
+      ctx.fillRect(STAGE_W - m - 16, m + 5, 3, 3);
+    }
+  }
+  // "완성!" 배너
+  const txt = pixelText(OPT.celebrateText || "완성!", { size: 12, color: "#2b1d1a" });
+  const bw = txt.width + 14, bh = 18;
+  const slide = Math.min(1, dt / 240);
+  const out = dt > 3200 ? (dt - 3200) / 400 : 0;
+  const by = Math.round(-bh + (bh + 10) * Math.floor(slide * 4) / 4 - out * 30);
+  const bx = Math.round((STAGE_W - bw) / 2);
+  ctx.fillStyle = "#2b1d1a";
+  ctx.fillRect(bx + 2, by + 2, bw, bh);
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.fillStyle = Math.floor(dt / 200) % 2 ? "#f6d97a" : "#f08fb0";
+  ctx.fillRect(bx + 1, by + 1, bw - 2, bh - 2);
+  ctx.drawImage(txt, bx + 7, by + 1);
+  // 반짝이
+  if (dt < 2600) {
+    const k = Math.floor(dt / 160);
+    drawSparkle(ctx, bx - 6, by + 6 + (k % 2) * 2, 1 + (k % 2), "#ffffff");
+    drawSparkle(ctx, bx + bw + 5, by + 10 - (k % 2) * 2, 2 - (k % 2), "#ffffff");
+  }
+}
+
+function drawFlashes(ctx, t) {
+  for (const f of ui.flashes) {
+    const dt = t - f;
+    if (dt < 0 || dt > 220) continue;
+    const a = dt < 60 ? 0.95 : dt < 120 ? 0.6 : dt < 170 ? 0.3 : 0.1;
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+  }
+  ui.flashes = ui.flashes.filter((f) => t - f < 400 || f > t);
+}
+
+let cursorSmall = null;
+function drawPointer(ctx, t) {
+  const p = ui.pointer;
+  if (ui.paint) {
+    const b = brushSprite(ui.paintColor);
+    if (p && p.mouse && b) ctx.drawImage(b, Math.round(p.x), Math.round(p.y) - 13);
+    const tb = ui.tapBrush;
+    if (tb && b && t - tb.at < 450) {
+      const k = Math.floor((t - tb.at) / 90);
+      ctx.drawImage(b, Math.round(tb.x) + (k % 2 ? 2 : 0), Math.round(tb.y) - 13 - (k % 2 ? 1 : 0));
+    }
+  } else if (p && p.mouse && recorder && recorder.active) {
+    // 녹화 중엔 진짜 마우스 커서가 안 찍히니까 픽셀 커서를 그려줌
+    if (!cursorSmall) {
+      const im = getImg("assets/ui/cursor.png");
+      if (im) {
+        cursorSmall = document.createElement("canvas");
+        cursorSmall.width = cursorSmall.height = 16;
+        const c2 = cursorSmall.getContext("2d");
+        c2.imageSmoothingEnabled = false;
+        c2.drawImage(im, 0, 0, 16, 16);
+      }
+    }
+    if (cursorSmall) ctx.drawImage(cursorSmall, Math.round(p.x), Math.round(p.y));
+  }
+}
+
+function renderStage(ctx, t, st = state, { motion = true, overlay = true } = {}) {
+  const dt = Math.min(50, t - (ui.lastT || t));
+  ui.lastT = t;
   ctx.clearRect(0, 0, STAGE_W, STAGE_H);
   const bg = getImg(findBy(OPT.backgrounds, st.background).src);
-  if (bg) ctx.drawImage(bg, 0, 0);
+  if (bg) ctx.drawImage(bg, 0, 0, STAGE_W, STAGE_H);
   else { ctx.fillStyle = "#f6e7ee"; ctx.fillRect(0, 0, STAGE_W, STAGE_H); }
 
   const shadow = getImg(OPT.body.shadow);
@@ -283,14 +551,12 @@ function renderStage(ctx, t, st = state, { motion = true } = {}) {
     ctx.globalAlpha = 1;
   }
 
-  composeAvatar(avCtx, st, { blink: motion && t < ui.blinkUntil });
+  composeAvatar(avCtx, st, {
+    blink: motion && t < ui.blinkUntil && !ui.happy,
+    faceOverride: ui.happy && st === state ? OPT.celebrateFace || "happy" : null,
+  });
 
-  let y = AV_Y;
-  if (motion) {
-    const dt = t - ui.bounceAt;
-    if (dt < 80) y -= 2;
-    else if (dt < 160) y -= 1;
-  }
+  const y = AV_Y + (motion ? avatarOffset(t) : 0);
   const beat = 60000 / (OPT.audio.bpm || 100);
   const breathe = motion && Math.floor(t / beat) % 2 === 1;
   if (breathe) {
@@ -300,14 +566,20 @@ function renderStage(ctx, t, st = state, { motion = true } = {}) {
   } else {
     ctx.drawImage(avCanvas, AV_X, y);
   }
+
+  if (!overlay) return;
+  updateFx(ctx, t, dt);
+  drawCelebration(ctx, t);
+  if (!document.body.classList.contains("photo")) drawBrushButton(ctx, t);
+  drawPointer(ctx, t);
+  drawFlashes(ctx, t);
 }
 
-// 화면 캔버스: 기기 픽셀 기준 정수배로 확대해서 선명하게
+// 화면 캔버스: 기기 픽셀 기준 정수배
 function fitCanvas(canvas, availW, availH, cover = false) {
   const dpr = window.devicePixelRatio || 1;
   const fitW = (availW * dpr) / STAGE_W, fitH = (availH * dpr) / STAGE_H;
   let S = Math.max(1, Math.floor(Math.min(fitW, fitH)));
-  // 사진 모드: 좌우를 살짝 잘라서라도 화면 폭을 꽉 채움 (정수배 유지)
   if (cover) S = Math.max(S, Math.min(Math.ceil(fitW), Math.floor(fitH)));
   if (canvas.width !== STAGE_W * S) {
     canvas.width = STAGE_W * S;
@@ -324,7 +596,7 @@ function blit(canvas) {
 }
 
 // ================================================================ state actions
-const zOf = (e) => (e.id === HAIR ? OPT.hairFrontZ : CAT_BY_KEY[ITEM_BY_ID[e.id].category].defaultZ);
+const zOf = (e) => (e.id === HAIR ? OPT.hairFrontZ : (CAT_BY_KEY[ITEM_BY_ID[e.id]?.category] || { defaultZ: 70 }).defaultZ);
 const wornIndex = (id) => state.worn.findIndex((e) => e.id === id);
 
 function wear(id, { silent = false } = {}) {
@@ -332,7 +604,7 @@ function wear(id, { silent = false } = {}) {
   if (!it) return;
   const cat = CAT_BY_KEY[it.category];
   if (!cat.multi) {
-    state.worn = state.worn.filter((e) => e.id === HAIR || ITEM_BY_ID[e.id].category !== it.category);
+    state.worn = state.worn.filter((e) => e.id === HAIR || ITEM_BY_ID[e.id]?.category !== it.category);
   }
   const z = cat.defaultZ;
   let idx = 0;
@@ -396,7 +668,7 @@ function randomize() {
   for (const e of state.worn) {
     const it = ITEM_BY_ID[e.id];
     if (it && it.recolor !== false && chance(0.35)) {
-      Object.assign(e, presetShift(it, OPT.colorPresets[Math.floor(Math.random() * OPT.colorPresets.length)]));
+      Object.assign(e, itemShift(it, OPT.colorPresets[Math.floor(Math.random() * OPT.colorPresets.length)]));
     }
   }
   ui.bounceAt = performance.now();
@@ -404,41 +676,97 @@ function randomize() {
   changed();
 }
 
-function presetShift(it, hex) {
-  const n = hexToInt(hex);
-  const [th, ts, tl] = rgbToHsl(n >> 16, (n >> 8) & 255, n & 255);
-  const [ah, as, al] = avgHsl(it.src);
-  let dh = Math.round(th - ah);
-  dh = ((dh + 540) % 360) - 180;
-  return {
-    hue: dh,
-    sat: Math.round(Math.max(-100, Math.min(100, (ts - as) * 100))),
-    light: Math.round(Math.max(-60, Math.min(60, (tl - al) * 100))),
-  };
+// ---------------------------------------------------------------- paint
+function setPaint(on) {
+  if (ui.paint === on) return;
+  ui.paint = on;
+  sound.play(on ? "brushOn" : "brushOff");
+  document.body.classList.toggle("painting", on);
+  if (on) ui.prevView = ui.view;
+  ui.view = on ? "paint" : ui.prevView === "paint" ? "closet" : ui.prevView || "closet";
+  renderPanel();
+}
+
+function pickPaintColor(hex) {
+  ui.paintColor = hex;
+  const recent = store.get(STORE_RECENT, []).filter((c) => c !== hex);
+  recent.unshift(hex);
+  store.set(STORE_RECENT, recent.slice(0, 8));
+  sound.play("color");
+  renderPanel();
+}
+
+// 방 안의 (sx, sy) 지점에 무엇이 있는지 (가장 바깥 레이어부터)
+function hitTest(sx, sy) {
+  const ax = Math.floor(sx - AV_X);
+  const ay = Math.floor(sy - (AV_Y + avatarOffset(performance.now())));
+  if (ax < 0 || ay < 0 || ax >= AV || ay >= AV) return null;
+  const stack = layerStack(state);
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const l = stack[i];
+    if (!l.canvas) continue;
+    if (alphaAt(l.canvas, ax, ay) || alphaAt(l.canvas, ax, ay + 1)) {
+      if (l.kind === "item" || l.kind === "hair") return l;
+      return { kind: l.kind };
+    }
+  }
+  return null;
+}
+
+function paintAt(sx, sy) {
+  const hit = hitTest(sx, sy);
+  ui.tapBrush = { x: sx, y: sy, at: performance.now() };
+  if (!hit || hit.kind === "body" || hit.kind === "face") {
+    sound.play("puff");
+    addPuff(sx, sy);
+    return;
+  }
+  if (hit.kind === "hair") {
+    state.hairShift = shiftTo(hairAvg(state), ui.paintColor);
+  } else {
+    const it = ITEM_BY_ID[hit.entry.id];
+    if (it.recolor === false) {
+      sound.play("error");
+      addPuff(sx, sy);
+      return;
+    }
+    Object.assign(hit.entry, itemShift(it, ui.paintColor));
+  }
+  sound.play("paint");
+  addSplash(sx, sy, ui.paintColor);
+  ui.bounceAt = performance.now();
+  changed();
+}
+
+// ---------------------------------------------------------------- celebrate
+function celebrate() {
+  const t = performance.now();
+  ui.happy = true;
+  ui.celebrateAt = t;
+  ui.jumpAt = t;
+  ui.flashes = [t + 520, t + 960, t + 1380];
+  sound.play("fanfare");
+  setTimeout(() => sound.play("shutter"), 520);
+  setTimeout(() => sound.play("shutter"), 960);
+  setTimeout(() => sound.play("shutter"), 1380);
+  addConfetti();
 }
 
 // ================================================================ persistence
-const store = {
-  get(k, fallback) {
-    try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
-  },
-  set(k, v) {
-    try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 저장 불가 환경 */ }
-  },
-};
-
 function snapshot() {
   return JSON.parse(JSON.stringify({
-    skin: state.skin, hairStyle: state.hairStyle, hairColor: state.hairColor,
-    face: state.face, background: state.background, worn: state.worn,
+    bodyType: state.bodyType, skin: state.skin, hairStyle: state.hairStyle, hairColor: state.hairColor,
+    hairShift: state.hairShift, face: state.face, background: state.background, worn: state.worn,
   }));
 }
 
 function applySnapshot(s) {
   if (!s) return;
+  if (bodyTypes().some((b) => b.id === s.bodyType)) state.bodyType = s.bodyType;
   if (OPT.skinRamps[s.skin]) state.skin = s.skin;
   if (OPT.hairStyles.some((h) => h.id === s.hairStyle)) state.hairStyle = s.hairStyle;
   if (OPT.hairRamps[s.hairColor]) state.hairColor = s.hairColor;
+  state.hairShift = s.hairShift || null;
   if (OPT.faces.some((f) => f.id === s.face)) state.face = s.face;
   if (OPT.backgrounds.some((b) => b.id === s.background)) state.background = s.background;
   if (Array.isArray(s.worn)) {
@@ -450,9 +778,132 @@ function applySnapshot(s) {
 
 let saveTimer;
 function changed({ flashId } = {}) {
+  ui.happy = false;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => store.set(STORE_CUR, snapshot()), 300);
   renderPanel({ flashId });
+}
+
+// ================================================================ custom items (웹에서 추가한 것)
+async function loadManifest() {
+  try {
+    const r = await fetch(`data/custom.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return { items: [], backgrounds: [], variants: [] };
+    const m = await r.json();
+    return { items: m.items || [], backgrounds: m.backgrounds || [], variants: m.variants || [] };
+  } catch (e) {
+    return { items: [], backgrounds: [], variants: [] };
+  }
+}
+
+const localURL = (rec) => {
+  if (!objectURLs.has(rec.id + rec.createdAt)) objectURLs.set(rec.id + rec.createdAt, URL.createObjectURL(rec.blob));
+  return objectURLs.get(rec.id + rec.createdAt);
+};
+
+function buildRegistry() {
+  const onlineIds = new Set([
+    ...MANIFEST.items.map((i) => i.id),
+    ...MANIFEST.backgrounds.map((b) => b.id),
+    ...MANIFEST.variants.map((v) => `var_${v.item}__${v.body}`),
+  ]);
+  const localItems = LOCALS.filter((r) => r.kind === "item" && !onlineIds.has(r.id))
+    .map((r) => ({ id: r.id, ...r.data, src: localURL(r), custom: true }));
+  const localBgs = LOCALS.filter((r) => r.kind === "background" && !onlineIds.has(r.id))
+    .map((r) => ({ id: r.id, ...r.data, src: localURL(r), custom: true }));
+  ITEMS = [...BASE_ITEMS, ...MANIFEST.items.map((i) => ({ ...i, custom: true })), ...localItems];
+  ITEM_BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
+  OPT.backgrounds = [...BASE_BGS, ...MANIFEST.backgrounds.map((b) => ({ ...b, custom: true })), ...localBgs];
+  VARIANTS = {};
+  const addVar = (item, body, src) => ((VARIANTS[item] ||= {})[body] = src);
+  for (const it of BASE_ITEMS) for (const [b, src] of Object.entries(it.variants || {})) addVar(it.id, b, src);
+  for (const v of MANIFEST.variants) addVar(v.item, v.body, v.src);
+  for (const r of LOCALS) if (r.kind === "variant" && !onlineIds.has(r.id)) addVar(r.data.item, r.data.body, localURL(r));
+}
+
+async function loadAllImages() {
+  const srcs = [
+    ...ITEMS.flatMap((i) => [i.src, ...(i.extraLayers || []).map((l) => l.src)]),
+    ...OPT.backgrounds.map((b) => b.src),
+    ...Object.values(VARIANTS).flatMap((v) => Object.values(v)),
+  ];
+  await Promise.all(srcs.map(loadImage));
+}
+
+async function reloadCustoms({ drop } = {}) {
+  LOCALS = await idb.all();
+  if (drop) {
+    MANIFEST.items = MANIFEST.items.filter((i) => i.id !== drop);
+    MANIFEST.backgrounds = MANIFEST.backgrounds.filter((b) => b.id !== drop);
+    MANIFEST.variants = MANIFEST.variants.filter((v) => `var_${v.item}__${v.body}` !== drop);
+  }
+  buildRegistry();
+  await loadAllImages();
+  state.worn = state.worn.filter((e) => e.id === HAIR || ITEM_BY_ID[e.id]);
+  if (!OPT.backgrounds.some((b) => b.id === state.background)) state.background = OPT.backgrounds[0].id;
+  changed();
+}
+
+function customList() {
+  const out = [];
+  const catName = (k) => (CAT_BY_KEY[k] || {}).name || k;
+  for (const i of MANIFEST.items) out.push({ id: i.id, name: i.name, label: catName(i.category), image: getImg(i.src), online: true, path: i.src });
+  for (const b of MANIFEST.backgrounds) out.push({ id: b.id, name: b.name, label: "배경", image: getImg(b.src), online: true, path: b.src });
+  for (const v of MANIFEST.variants) {
+    const it = ITEM_BY_ID[v.item];
+    out.push({ id: `var_${v.item}__${v.body}`, name: `${it ? it.name : v.item} (${bodyTypeOf(v.body).name})`, label: "체형 전용", image: getImg(v.src), online: true, path: v.src });
+  }
+  const online = new Set(out.map((o) => o.id));
+  for (const r of LOCALS) {
+    if (online.has(r.id)) continue;
+    let name = r.data.name, label;
+    if (r.kind === "background") label = "배경";
+    else if (r.kind === "variant") {
+      const it = ITEM_BY_ID[r.data.item];
+      name = `${it ? it.name : r.data.item} (${bodyTypeOf(r.data.body).name})`;
+      label = "체형 전용";
+    } else label = catName(r.data.category);
+    out.push({ id: r.id, name, label, image: getImg(localURL(r)), online: false, pending: r.published });
+  }
+  return out.reverse();
+}
+
+// 인페인팅 기준 바디: 원본 피부색(예약색) + 여성 속옷 + 기본 얼굴, 머리 없음
+function referenceCanvas() {
+  const c = document.createElement("canvas");
+  c.width = c.height = AV;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(getImg(OPT.body.body), 0, 0);
+  ctx.drawImage(getImg(OPT.body.underwear), 0, 0);
+  const face = findBy(OPT.faces, "neutral");
+  if (getImg(face.src)) ctx.drawImage(getImg(face.src), 0, 0);
+  return c;
+}
+
+// 관리 화면 미리보기: 지금 코디 위에 새 그림을 얹어서
+function previewWith(layer, kind, variant) {
+  const st = { ...state, worn: [...state.worn] };
+  if (kind === "bg") {
+    const c = document.createElement("canvas");
+    c.width = STAGE_W; c.height = STAGE_H;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(layer, 0, 0);
+    composeAvatar(avCtx, st);
+    ctx.drawImage(avCanvas, AV_X, AV_Y);
+    return c;
+  }
+  if (variant) {
+    st.bodyType = variant.body;
+    st.worn = st.worn.filter((e) => e.id !== variant.item);
+  }
+  const c = document.createElement("canvas");
+  c.width = STAGE_W; c.height = STAGE_H;
+  const ctx = c.getContext("2d");
+  const bg = getImg(findBy(OPT.backgrounds, st.background).src);
+  if (bg) ctx.drawImage(bg, 0, 0);
+  composeAvatar(avCtx, st, { extra: variant ? layer : warp(layer, st.bodyType) });
+  ctx.drawImage(avCanvas, AV_X, AV_Y);
+  return c;
 }
 
 // ================================================================ UI: panel
@@ -471,7 +922,7 @@ function renderTabs() {
   for (const t of tabsList()) {
     const b = el("button", "tab" + (ui.tab === t.key ? " on" : ""));
     const n = CAT_BY_KEY[t.key] ? state.worn.filter((e) => ITEM_BY_ID[e.id]?.category === t.key).length : 0;
-    b.innerHTML = t.name + (n ? `<span class="n">${n}</span>` : "");
+    b.innerHTML = esc(t.name) + (n ? `<span class="n">${n}</span>` : "");
     b.onclick = () => {
       ui.tab = t.key;
       sound.play("tab");
@@ -482,11 +933,11 @@ function renderTabs() {
   }
 }
 
-function headThumb(st) {
+function avatarThumb(st, box, max = 56) {
   const c = document.createElement("canvas");
-  c.width = AV; c.height = AV;
+  c.width = c.height = AV;
   composeAvatar(c.getContext("2d"), { ...st, worn: [{ id: HAIR }] });
-  return thumb(c, { x: 38, y: 2, w: 52, h: 52 }, 56);
+  return thumb(c, box, max);
 }
 
 function swatch(color, on, onClick, title) {
@@ -498,14 +949,12 @@ function swatch(color, on, onClick, title) {
   return b;
 }
 
-function section(title) {
-  return el("div", "section-title", title);
-}
+const section = (title) => el("div", "section-title", esc(title));
 
-function itemTile(content, { on = false, label, onClick }) {
-  const b = el("button", "item" + (on ? " on" : "") + (label ? " has-label" : ""));
+function itemTile(content, { on = false, label, onClick, isNew = false }) {
+  const b = el("button", "item" + (on ? " on" : "") + (label ? " has-label" : "") + (isNew ? " new" : ""));
   b.append(content);
-  if (label) b.append(el("span", "label", label));
+  if (label) b.append(el("span", "label", esc(label)));
   b.onclick = onClick;
   return b;
 }
@@ -514,9 +963,16 @@ function renderContent() {
   const box = $("#content");
   box.innerHTML = "";
 
-  if (ui.view === "layers") return renderLayers(box);
-
   if (ui.tab === "body") {
+    box.append(section("체형"));
+    const gb = el("div", "grid");
+    for (const b of bodyTypes()) {
+      gb.append(itemTile(avatarThumb({ ...state, bodyType: b.id }, { x: 26, y: 4, w: 76, h: 122 }, 60), {
+        on: state.bodyType === b.id, label: b.name,
+        onClick: () => { state.bodyType = b.id; sound.play("select"); ui.bounceAt = performance.now(); changed(); },
+      }));
+    }
+    box.append(gb);
     box.append(section("피부색"));
     const row = el("div", "swatch-row");
     for (const [k, ramp] of Object.entries(OPT.skinRamps)) {
@@ -527,7 +983,8 @@ function renderContent() {
     box.append(section("표정"));
     const g = el("div", "grid");
     for (const f of OPT.faces) {
-      g.append(itemTile(headThumb({ ...state, face: f.id }), {
+      if (f.hidden) continue;
+      g.append(itemTile(avatarThumb({ ...state, face: f.id }, { x: 38, y: 2, w: 52, h: 52 }), {
         on: state.face === f.id, label: f.name,
         onClick: () => { state.face = f.id; sound.play("select"); ui.bounceAt = performance.now(); changed(); },
       }));
@@ -541,13 +998,15 @@ function renderContent() {
     const row = el("div", "swatch-row");
     for (const [k, ramp] of Object.entries(OPT.hairRamps)) {
       if (k.startsWith("_")) continue;
-      row.append(swatch(ramp[1], state.hairColor === k, () => { state.hairColor = k; sound.play("select"); changed(); }, k));
+      row.append(swatch(ramp[1], state.hairColor === k && !state.hairShift, () => {
+        state.hairColor = k; state.hairShift = null; sound.play("select"); changed();
+      }, k));
     }
     box.append(row);
     box.append(section("헤어 스타일"));
     const g = el("div", "grid");
     for (const h of OPT.hairStyles) {
-      g.append(itemTile(headThumb({ ...state, hairStyle: h.id }), {
+      g.append(itemTile(avatarThumb({ ...state, hairStyle: h.id }, { x: 38, y: 2, w: 52, h: 52 }), {
         on: state.hairStyle === h.id, label: h.name,
         onClick: () => { state.hairStyle = h.id; sound.play("equip"); ui.bounceAt = performance.now(); changed(); },
       }));
@@ -561,29 +1020,35 @@ function renderContent() {
     for (const b of OPT.backgrounds) {
       const im = getImg(b.src);
       g.append(itemTile(thumb(im, im && { x: 0, y: 0, w: im.width, h: im.height }, 56), {
-        on: state.background === b.id, label: b.name,
+        on: state.background === b.id, label: b.name, isNew: b.custom,
         onClick: () => { state.background = b.id; sound.play("select"); changed(); },
       }));
     }
+    g.append(addTile());
     box.append(g);
     return;
   }
 
   const list = ITEMS.filter((i) => i.category === ui.tab);
-  if (!list.length) {
-    box.append(el("div", "empty", "아직 아이템이 없어요<br>items.json에 추가하면 여기에 나타나요"));
-    return;
-  }
   const cat = CAT_BY_KEY[ui.tab];
   box.append(section(cat.multi ? "여러 개 겹쳐 입을 수 있어요" : "하나만 착용돼요"));
   const g = el("div", "grid");
   for (const it of list) {
-    g.append(itemTile(thumb(getImg(it.src), bbox(it.src)), {
-      on: wornIndex(it.id) >= 0, label: it.name,
+    const im = getImg(it.src);
+    g.append(itemTile(thumb(im, bbox(im)), {
+      on: wornIndex(it.id) >= 0, label: it.name, isNew: it.custom,
       onClick: () => toggleItem(it.id),
     }));
   }
+  g.append(addTile());
   box.append(g);
+}
+
+function addTile() {
+  const b = el("button", "item add-tile has-label");
+  b.innerHTML = `<img class="icon" src="assets/ui/icon_plus.png" alt=""><span class="label">추가하기</span>`;
+  b.onclick = () => openAdmin();
+  return b;
 }
 
 function iconBtn(icon, label, onClick, disabled) {
@@ -606,19 +1071,19 @@ function renderLayers(box, flashId) {
     const t = el("div", "thumb");
     let name, sub;
     if (e.id === HAIR) {
-      const hair = findBy(OPT.hairStyles, state.hairStyle);
-      const src = hair.front;
-      t.append(thumb(hairLayer(src), bbox(src), 32));
+      const c = hairLayer({ ...state, bodyType: "regular" }, "front");
+      t.append(thumb(c, bbox(c), 32));
       name = "앞머리";
       sub = "헤어";
     } else {
       const it = ITEM_BY_ID[e.id];
-      t.append(thumb(recolor(it.src, e.hue, e.sat, e.light), bbox(it.src), 32));
+      const c = recolorSource(it.src, getImg(it.src), e.hue, e.sat, e.light);
+      t.append(thumb(c, bbox(getImg(it.src)), 32));
       name = it.name;
       sub = CAT_BY_KEY[it.category].name + (e.hue || e.sat || e.light ? " · 색 변경" : "");
     }
     row.append(t);
-    row.append(el("div", "name", `<b>${name}</b><small>${sub}</small>`));
+    row.append(el("div", "name", `<b>${esc(name)}</b><small>${esc(sub)}</small>`));
     row.append(iconBtn("up", "바깥으로", () => move(e.id, +1), i === n - 1));
     row.append(iconBtn("down", "안쪽으로", () => move(e.id, -1), i === 0));
     if (e.id !== HAIR) {
@@ -633,23 +1098,54 @@ function renderLayers(box, flashId) {
   box.append(wrap);
 }
 
+function renderPaint(box) {
+  const head = el("div", "paint-head");
+  const cur = el("div", "paint-current");
+  cur.style.background = ui.paintColor;
+  head.append(cur);
+  head.append(el("div", "paint-title", `<b>붓 색 고르기</b><small>방 안의 옷이나 머리를 톡 누르면 염색돼요</small>`));
+  const done = el("button", "btn small primary", "붓 내려놓기");
+  done.onclick = () => setPaint(false);
+  head.append(done);
+  box.append(head);
+
+  const recent = store.get(STORE_RECENT, []);
+  if (recent.length) {
+    box.append(section("최근 쓴 색"));
+    const r = el("div", "swatch-row");
+    recent.forEach((c) => r.append(swatch(c, c === ui.paintColor, () => pickPaintColor(c), c)));
+    box.append(r);
+  }
+  box.append(section("팔레트"));
+  const g = el("div", "swatches paint-swatches");
+  const palette = OPT.paintPalette || OPT.colorPresets;
+  palette.forEach((c) => g.append(swatch(c, c === ui.paintColor, () => pickPaintColor(c), c)));
+  box.append(g);
+
+  box.append(section("직접 고르기 (모든 색)"));
+  const pick = el("label", "color-pick");
+  pick.innerHTML = `<input type="color" value="${ui.paintColor}"><span>색상표 열기</span>`;
+  pick.querySelector("input").onchange = (e) => pickPaintColor(e.target.value);
+  box.append(pick);
+}
+
 function renderPanel({ flashId } = {}) {
+  const painting = ui.view === "paint";
+  $("#seg").hidden = painting;
   document.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("on", b.dataset.view === ui.view));
   $("#layerCount").textContent = state.worn.length - 1;
-  $("#tabs").hidden = ui.view === "layers";
+  $("#tabs").hidden = ui.view !== "closet";
   if (ui.view === "closet") renderTabs();
   const box = $("#content");
   const keep = box.scrollTop;
-  if (ui.view === "layers") {
-    box.innerHTML = "";
-    renderLayers(box, flashId);
-  } else {
-    renderContent();
-  }
+  box.innerHTML = "";
+  if (ui.view === "layers") renderLayers(box, flashId);
+  else if (painting) renderPaint(box);
+  else renderContent();
   box.scrollTop = keep;
 }
 
-// ================================================================ UI: color sheet
+// ================================================================ UI: color sheet (레이어에서 세밀 조정)
 function openColor(index) {
   ui.colorIndex = index;
   const e = state.worn[index];
@@ -663,7 +1159,7 @@ function openColor(index) {
   pres.innerHTML = "";
   for (const hex of OPT.colorPresets) {
     pres.append(swatch(hex, false, () => {
-      Object.assign(e, presetShift(it, hex));
+      Object.assign(e, itemShift(it, hex));
       sound.play("color");
       syncColor();
     }, hex));
@@ -680,14 +1176,15 @@ function syncColor() {
   $("#satIn").value = e.sat || 0;
   $("#lightIn").value = e.light || 0;
   const t = $("#colorThumb");
-  const src = recolor(it.src, e.hue, e.sat, e.light);
-  const b = bbox(it.src);
+  const base = getImg(it.src);
+  const src = recolorSource(it.src, base, e.hue, e.sat, e.light);
+  const b = bbox(base);
   if (b && src) {
     t.width = b.w; t.height = b.h;
     const ctx = t.getContext("2d");
     ctx.clearRect(0, 0, b.w, b.h);
     ctx.drawImage(src, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h);
-    const s = Math.max(1, Math.floor(48 / Math.max(b.w, b.h))) || 48 / Math.max(b.w, b.h);
+    const s = Math.max(1, Math.floor(48 / Math.max(b.w, b.h)));
     t.style.width = `${b.w * s}px`;
     t.style.height = `${b.h * s}px`;
   }
@@ -722,8 +1219,8 @@ function bindColorSheet() {
 }
 
 // ================================================================ UI: save slots
-function stageDataURL(scale = 1, st = state) {
-  renderStage(stageCtx, 0, st, { motion: false });
+function stageSnapshotCanvas(scale = 1, st = state) {
+  renderStage(stageCtx, performance.now(), st, { motion: false, overlay: false });
   const c = document.createElement("canvas");
   c.width = STAGE_W * scale;
   c.height = STAGE_H * scale;
@@ -751,7 +1248,7 @@ function renderSlots() {
     const acts = el("div", "acts");
     const saveB = el("button", "btn small primary", "저장");
     saveB.onclick = () => {
-      slots[i] = { at: Date.now(), state: snapshot(), shot: stageDataURL(1).toDataURL("image/png") };
+      slots[i] = { at: Date.now(), state: snapshot(), shot: stageSnapshotCanvas(1).toDataURL("image/png") };
       store.set(STORE_SLOTS, slots);
       sound.play("shutter");
       toast(`코디 ${i + 1}에 저장했어요`);
@@ -764,7 +1261,7 @@ function renderSlots() {
         applySnapshot(s.state);
         sound.play("equip");
         ui.bounceAt = performance.now();
-        $("#saveSheet").hidden = true;
+        closeSheets();
         changed();
       };
       acts.append(loadB);
@@ -774,18 +1271,115 @@ function renderSlots() {
   }
 }
 
+// ================================================================ recording
+let countdownTimer = null;
+async function toggleRecord() {
+  if (recorder && recorder.active) return stopRecord();
+  if (countdownTimer) return;
+  if (!Recorder.supported()) {
+    toast("이 브라우저는 녹화를 지원하지 않아요");
+    sound.play("error");
+    return;
+  }
+  setPaint(false);
+  const cd = $("#countdown");
+  let n = 3;
+  cd.hidden = false;
+  cd.textContent = n;
+  sound.play("count");
+  $("#recBtn").classList.add("arming");
+  countdownTimer = setInterval(() => {
+    n--;
+    if (n > 0) {
+      cd.textContent = n;
+      sound.play("count");
+      return;
+    }
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+    cd.hidden = true;
+    startRecord();
+  }, 700);
+}
+
+function startRecord() {
+  recorder = recorder || new Recorder({ width: STAGE_W * REC_SCALE, height: STAGE_H * REC_SCALE });
+  try {
+    recorder.start(sound.streamDest());
+  } catch (e) {
+    console.error(e);
+    toast("녹화를 시작하지 못했어요");
+    $("#recBtn").classList.remove("arming");
+    return;
+  }
+  sound.play("recStart");
+  document.body.classList.add("recording");
+  $("#recBtn").classList.remove("arming");
+  $("#recLabel").textContent = "녹화 끝";
+  $("#recIcon").src = "assets/ui/icon_stop.png";
+  $("#recBadge").hidden = false;
+}
+
+async function stopRecord() {
+  const res = await recorder.stop();
+  sound.play("recStop");
+  document.body.classList.remove("recording");
+  $("#recLabel").textContent = "녹화";
+  $("#recIcon").src = "assets/ui/icon_rec.png";
+  $("#recBadge").hidden = true;
+  if (!res || !res.blob.size) {
+    toast("녹화된 내용이 없어요");
+    return;
+  }
+  showVideo(res);
+}
+
+let lastVideoURL = null;
+function showVideo({ blob, ext }) {
+  if (lastVideoURL) URL.revokeObjectURL(lastVideoURL);
+  lastVideoURL = URL.createObjectURL(blob);
+  const name = `pixel-closet-${stamp()}.${ext}`;
+  const v = $("#videoPreview");
+  v.src = lastVideoURL;
+  $("#videoInfo").textContent = `${(blob.size / 1024 / 1024).toFixed(1)}MB · ${ext.toUpperCase()}${ext === "webm" ? " (인스타에 올리려면 mp4 변환이 필요할 수 있어요)" : ""}`;
+  $("#videoSave").onclick = () => download(blob, name);
+  const file = new File([blob], name, { type: blob.type });
+  const canShare = navigator.canShare && navigator.canShare({ files: [file] });
+  $("#videoShare").hidden = !canShare;
+  $("#videoShare").onclick = async () => {
+    try {
+      await navigator.share({ files: [file], title: "PIXEL CLOSET" });
+    } catch (e) { /* 취소 */ }
+  };
+  openSheet("#videoSheet");
+}
+
 // ================================================================ UI: misc
-let toastTimer;
+const stamp = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+};
+
+function download(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
 function toast(msg) {
   const t = $("#toast");
   t.textContent = msg;
   t.classList.remove("show");
   void t.offsetWidth;
   t.classList.add("show");
-  clearTimeout(toastTimer);
 }
 
-function flash() {
+function flashScreen() {
   const f = $("#flash");
   f.classList.remove("go");
   void f.offsetWidth;
@@ -801,26 +1395,75 @@ function spark(x, y) {
 }
 
 function exportPNG() {
-  const c = stageDataURL(6);
-  flash();
+  const c = stageSnapshotCanvas(6);
+  flashScreen();
   sound.play("shutter");
-  const name = `pixel-closet-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}.png`;
   c.toBlob((blob) => {
     if (!blob) return;
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    download(blob, `pixel-closet-${stamp()}.png`);
     toast("PNG를 저장했어요");
   }, "image/png");
 }
 
 function setPhoto(on) {
+  if (on) setPaint(false);
   document.body.classList.toggle("photo", on);
   layout();
+}
+
+function openSheet(sel) {
+  closeSheets();
+  $(sel).hidden = false;
+}
+function closeSheets() {
+  document.querySelectorAll(".sheet-back").forEach((s) => (s.hidden = true));
+}
+
+function syncAudioBtns() {
+  $("#bgmToggle").textContent = `배경음악 ${sound.bgmOn ? "ON" : "OFF"}`;
+  $("#sfxToggle").textContent = `효과음 ${sound.sfxOn ? "ON" : "OFF"}`;
+  $("#bgmToggle").classList.toggle("off", !sound.bgmOn);
+  $("#sfxToggle").classList.toggle("off", !sound.sfxOn);
+  store.set("pixelcloset.v1.audio", { bgm: sound.bgmOn, sfx: sound.sfxOn });
+}
+
+function stagePoint(ev) {
+  const r = $("#stage").getBoundingClientRect();
+  return {
+    x: ((ev.clientX - r.left) / r.width) * STAGE_W,
+    y: ((ev.clientY - r.top) / r.height) * STAGE_H,
+  };
+}
+
+function bindStage() {
+  const cv = $("#stage");
+  cv.addEventListener("pointermove", (ev) => {
+    const p = stagePoint(ev);
+    ui.pointer = { ...p, mouse: ev.pointerType === "mouse" };
+    const overBtn = p.x >= BRUSH_BTN.x && p.x < BRUSH_BTN.x + BRUSH_BTN.w + 1 && p.y >= BRUSH_BTN.y && p.y < BRUSH_BTN.y + BRUSH_BTN.h + 1;
+    cv.classList.toggle("over-btn", overBtn);
+  });
+  cv.addEventListener("pointerleave", () => (ui.pointer = null));
+  cv.addEventListener("pointerdown", (ev) => {
+    if (document.body.classList.contains("photo")) return;
+    const p = stagePoint(ev);
+    const t = performance.now();
+    if (p.x >= BRUSH_BTN.x - 2 && p.x < BRUSH_BTN.x + BRUSH_BTN.w + 3 && p.y >= BRUSH_BTN.y - 2 && p.y < BRUSH_BTN.y + BRUSH_BTN.h + 3) {
+      setPaint(!ui.paint);
+      ui.fx.push({ type: "spark", x: BRUSH_BTN.x + 9, y: BRUSH_BTN.y + 9, t0: t, life: 300 });
+      return;
+    }
+    if (ui.paint) {
+      paintAt(p.x, p.y);
+      return;
+    }
+    ui.fx.push({ type: "spark", x: p.x, y: p.y, t0: t, life: 360 });
+    const hit = hitTest(p.x, p.y);
+    if (hit) {
+      ui.bounceAt = t;
+      sound.play("tab");
+    }
+  });
 }
 
 function bindUI() {
@@ -832,32 +1475,34 @@ function bindUI() {
     };
   });
   $("#randomBtn").onclick = randomize;
-  $("#saveBtn").onclick = () => { sound.play("tab"); renderSlots(); $("#saveSheet").hidden = false; };
-  $("#saveClose").onclick = () => { sound.play("tab"); $("#saveSheet").hidden = true; };
-  $("#saveSheet").addEventListener("click", (ev) => { if (ev.target.id === "saveSheet") $("#saveSheet").hidden = true; });
-  $("#photoBtn").onclick = () => { flash(); sound.play("shutter"); setPhoto(true); };
-  $("#stageWrap").addEventListener("click", (ev) => {
-    if (document.body.classList.contains("photo") && !ev.target.closest(".hud")) setPhoto(false);
-  });
-  $("#exportBtn").onclick = exportPNG;
+  $("#doneBtn").onclick = celebrate;
+  $("#recBtn").onclick = toggleRecord;
+  $("#menuBtn").onclick = () => { sound.play("tab"); openSheet("#menuSheet"); };
 
-  const bgmBtn = $("#bgmBtn"), sfxBtn = $("#sfxBtn");
-  const syncAudioBtns = () => {
-    bgmBtn.textContent = `BGM ${sound.bgmOn ? "ON" : "OFF"}`;
-    bgmBtn.setAttribute("aria-pressed", sound.bgmOn);
-    sfxBtn.textContent = `SFX ${sound.sfxOn ? "ON" : "OFF"}`;
-    sfxBtn.setAttribute("aria-pressed", sound.sfxOn);
-    store.set("pixelcloset.v1.audio", { bgm: sound.bgmOn, sfx: sound.sfxOn });
-  };
-  bgmBtn.onclick = () => { sound.setBgm(!sound.bgmOn); sound.play("tab"); syncAudioBtns(); };
-  sfxBtn.onclick = () => { sound.sfxOn = !sound.sfxOn; sound.play("tab"); syncAudioBtns(); };
+  $("#mSave").onclick = () => { sound.play("tab"); renderSlots(); openSheet("#saveSheet"); };
+  $("#mPhoto").onclick = () => { closeSheets(); flashScreen(); sound.play("shutter"); setPhoto(true); };
+  $("#mPng").onclick = () => { closeSheets(); exportPNG(); };
+  $("#mAdmin").onclick = () => { closeSheets(); openAdmin(); };
+  $("#bgmToggle").onclick = () => { sound.setBgm(!sound.bgmOn); sound.play("tab"); syncAudioBtns(); };
+  $("#sfxToggle").onclick = () => { sound.sfxOn = !sound.sfxOn; sound.play("tab"); syncAudioBtns(); };
   syncAudioBtns();
 
-  bindColorSheet();
+  document.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => { sound.play("tab"); closeSheets(); }));
+  document.querySelectorAll(".sheet-back").forEach((s) => s.addEventListener("click", (ev) => {
+    if (ev.target === s && s.id !== "colorSheet") closeSheets();
+  }));
 
-  // 탭한 위치에 반짝이 (폰 녹화에도 상호작용이 보이게)
-  document.addEventListener("pointerdown", (ev) => spark(ev.clientX, ev.clientY), { passive: true });
-  // 마우스 호버 효과음 (데스크톱)
+  $("#stageWrap").addEventListener("click", (ev) => {
+    if (document.body.classList.contains("photo")) setPhoto(false);
+  });
+
+  bindColorSheet();
+  bindStage();
+
+  document.addEventListener("pointerdown", (ev) => {
+    if (ev.target.id === "stage") return; // 방 안에서는 캔버스에 직접 그림
+    spark(ev.clientX, ev.clientY);
+  }, { passive: true });
   document.addEventListener("pointerover", (ev) => {
     if (ev.pointerType !== "mouse") return;
     const b = ev.target.closest("button");
@@ -889,41 +1534,61 @@ function loop(t) {
   renderStage(stageCtx, t);
   if (started) blit($("#stage"));
   else blit($("#startPreview"));
+  if (recorder && recorder.active) {
+    recorder.draw(stageCanvas);
+    const s = Math.floor(recorder.elapsed() / 1000);
+    $("#recTime").textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  }
   requestAnimationFrame(loop);
 }
 
 // ================================================================ boot
 async function boot() {
-  const [opt, items] = await Promise.all([
-    fetch("data/options.json").then((r) => r.json()),
-    fetch("data/items.json").then((r) => r.json()),
+  const [opt, items, manifest, locals] = await Promise.all([
+    fetch("data/options.json", { cache: "no-cache" }).then((r) => r.json()),
+    fetch("data/items.json", { cache: "no-cache" }).then((r) => r.json()),
+    loadManifest(),
+    idb.all(),
   ]);
   OPT = opt;
-  ITEMS = items;
-  ITEM_BY_ID = Object.fromEntries(items.map((i) => [i.id, i]));
+  BASE_ITEMS = items;
+  BASE_BGS = [...opt.backgrounds];
+  MANIFEST = manifest;
   CAT_BY_KEY = Object.fromEntries(opt.categories.map((c) => [c.key, c]));
   OUTLINE_SET = new Set((opt.outlineColors || []).map(hexToInt));
   document.title = opt.title || document.title;
   $("#logo").textContent = opt.title || "PIXEL CLOSET";
   ui.tab = opt.tabOrder[0] || "top";
 
+  // 온라인에 반영된 로컬 사본은 정리
+  const onlineIds = new Set([
+    ...manifest.items.map((i) => i.id), ...manifest.backgrounds.map((b) => b.id),
+    ...manifest.variants.map((v) => `var_${v.item}__${v.body}`),
+  ]);
+  for (const r of locals) if (r.published && onlineIds.has(r.id)) await idb.del(r.id);
+  LOCALS = locals.filter((r) => !(r.published && onlineIds.has(r.id)));
+  buildRegistry();
+
   const d = opt.defaults || {};
-  state.skin = d.skin || state.skin;
-  state.hairStyle = d.hairStyle || state.hairStyle;
-  state.hairColor = d.hairColor || state.hairColor;
-  state.face = d.face || state.face;
-  state.background = d.background || state.background;
+  Object.assign(state, {
+    bodyType: d.bodyType || state.bodyType,
+    skin: d.skin || state.skin,
+    hairStyle: d.hairStyle || state.hairStyle,
+    hairColor: d.hairColor || state.hairColor,
+    face: d.face || state.face,
+    background: d.background || state.background,
+  });
 
   const srcs = [
     opt.body.body, opt.body.underwear, opt.body.shadow,
+    "assets/ui/brush.png", "assets/ui/cursor.png",
+    ...bodyTypes().flatMap((b) => [b.body, b.underwear]).filter(Boolean),
     ...opt.hairStyles.flatMap((h) => [h.back, h.front]),
     ...opt.faces.flatMap((f) => [f.src, f.blink].filter(Boolean)),
-    ...opt.backgrounds.map((b) => b.src),
-    ...items.flatMap((i) => [i.src, ...(i.extraLayers || []).map((l) => l.src)]),
   ];
-  await Promise.all(srcs.map(loadImage));
+  await Promise.all([...srcs.map(loadImage), loadAllImages(), document.fonts && document.fonts.load("700 12px Galmuri11")]);
+  measureCore();
 
-  // 저장된 코디 복원 (아이템이 삭제됐으면 자동으로 빠짐)
   applySnapshot(store.get(STORE_CUR, null));
 
   const audioPref = store.get("pixelcloset.v1.audio", { bgm: true, sfx: true });
@@ -931,6 +1596,16 @@ async function boot() {
   sound.bgmOn = audioPref.bgm !== false;
   sound.sfxOn = audioPref.sfx !== false;
 
+  initAdmin({
+    sound, toast,
+    categories: () => opt.categories,
+    items: () => ITEMS,
+    bodyTypes,
+    reservedColors: () => [...OPT.skinRamps._source, ...OPT.hairRamps._source],
+    referenceCanvas, previewWith, reloadCustoms, customList,
+    defaultRepo: opt.github && opt.github.repo,
+    defaultBranch: (opt.github && opt.github.branch) || "main",
+  });
   bindUI();
   renderPanel();
   startLayout();
@@ -952,5 +1627,5 @@ async function boot() {
 boot().catch((e) => {
   console.error(e);
   document.body.insertAdjacentHTML("beforeend",
-    `<div class="toast show" style="animation:none;opacity:1">데이터를 불러오지 못했어요 (${e.message})</div>`);
+    `<div class="toast show" style="animation:none;opacity:1">데이터를 불러오지 못했어요 (${esc(e.message)})</div>`);
 });

@@ -1,82 +1,377 @@
 {
   "title": "PIXEL CLOSET",
   "categories": [
-    { "key": "socks",     "name": "양말",     "multi": false, "defaultZ": 40 },
-    { "key": "shoes",     "name": "신발",     "multi": false, "defaultZ": 50 },
-    { "key": "bottom",    "name": "하의",     "multi": true,  "defaultZ": 60 },
-    { "key": "onepiece",  "name": "원피스",   "multi": true,  "defaultZ": 65 },
-    { "key": "top",       "name": "상의",     "multi": true,  "defaultZ": 70 },
-    { "key": "belt",      "name": "벨트",     "multi": true,  "defaultZ": 75 },
-    { "key": "outer",     "name": "외투",     "multi": true,  "defaultZ": 80 },
-    { "key": "bag",       "name": "가방",     "multi": false, "defaultZ": 85 },
-    { "key": "jewelry",   "name": "쥬얼리",   "multi": true,  "defaultZ": 90 },
-    { "key": "accessory", "name": "액세서리", "multi": true,  "defaultZ": 100 }
+    {
+      "key": "socks",
+      "name": "양말",
+      "multi": false,
+      "defaultZ": 40
+    },
+    {
+      "key": "shoes",
+      "name": "신발",
+      "multi": false,
+      "defaultZ": 50
+    },
+    {
+      "key": "bottom",
+      "name": "하의",
+      "multi": true,
+      "defaultZ": 60
+    },
+    {
+      "key": "onepiece",
+      "name": "원피스",
+      "multi": true,
+      "defaultZ": 65
+    },
+    {
+      "key": "top",
+      "name": "상의",
+      "multi": true,
+      "defaultZ": 70
+    },
+    {
+      "key": "belt",
+      "name": "벨트",
+      "multi": true,
+      "defaultZ": 75
+    },
+    {
+      "key": "outer",
+      "name": "외투",
+      "multi": true,
+      "defaultZ": 80
+    },
+    {
+      "key": "bag",
+      "name": "가방",
+      "multi": false,
+      "defaultZ": 85
+    },
+    {
+      "key": "jewelry",
+      "name": "쥬얼리",
+      "multi": true,
+      "defaultZ": 90
+    },
+    {
+      "key": "accessory",
+      "name": "액세서리",
+      "multi": true,
+      "defaultZ": 100
+    }
   ],
-  "tabOrder": ["top", "bottom", "onepiece", "outer", "shoes", "socks", "belt", "bag", "jewelry", "accessory"],
+  "tabOrder": [
+    "top",
+    "bottom",
+    "onepiece",
+    "outer",
+    "shoes",
+    "socks",
+    "belt",
+    "bag",
+    "jewelry",
+    "accessory"
+  ],
   "hairFrontZ": 95,
-
-  "outlineColors": ["#2b1d1a", "#4a302a"],
-
+  "outlineColors": [
+    "#2b1d1a",
+    "#4a302a"
+  ],
   "body": {
     "body": "assets/base/body.png",
     "underwear": "assets/base/underwear.png",
     "shadow": "assets/base/shadow.png",
     "breathSplitY": 76
   },
-
   "skinRamps": {
-    "_source": ["#f5d0b6", "#e0ab8c", "#c4876b", "#8f5a47"],
-    "porcelain": ["#fdeee4", "#f6d6c4", "#e2b19a", "#b88470"],
-    "light":     ["#fbe0cc", "#f0c3a6", "#d99f83", "#a8705c"],
-    "medium":    ["#f5d0b5", "#e0ab8b", "#c4876a", "#8f5a46"],
-    "tan":       ["#e2b08a", "#c98f68", "#a8704f", "#774a35"],
-    "deep":      ["#a8704f", "#8d5a3f", "#6e4330", "#47291d"],
-    "rich":      ["#7a4e3a", "#5f3a2a", "#47291d", "#2e1a12"]
+    "_source": [
+      "#f5d0b6",
+      "#e0ab8c",
+      "#c4876b",
+      "#8f5a47"
+    ],
+    "porcelain": [
+      "#fdeee4",
+      "#f6d6c4",
+      "#e2b19a",
+      "#b88470"
+    ],
+    "light": [
+      "#fbe0cc",
+      "#f0c3a6",
+      "#d99f83",
+      "#a8705c"
+    ],
+    "medium": [
+      "#f5d0b5",
+      "#e0ab8b",
+      "#c4876a",
+      "#8f5a46"
+    ],
+    "tan": [
+      "#e2b08a",
+      "#c98f68",
+      "#a8704f",
+      "#774a35"
+    ],
+    "deep": [
+      "#a8704f",
+      "#8d5a3f",
+      "#6e4330",
+      "#47291d"
+    ],
+    "rich": [
+      "#7a4e3a",
+      "#5f3a2a",
+      "#47291d",
+      "#2e1a12"
+    ]
   },
   "hairRamps": {
-    "_source": ["#5a3a2b", "#3f2618", "#28170e"],
-    "brown":   ["#6b4532", "#4a2e20", "#2f1c13"],
-    "black":   ["#3e3c4a", "#26242f", "#15141b"],
-    "blonde":  ["#f6dc8f", "#ddb766", "#b48a45"],
-    "ash":     ["#c9c4cc", "#9d97a3", "#6f6977"],
-    "pink":    ["#f6b3cb", "#e286a8", "#b8607f"],
-    "red":     ["#c8553f", "#9c3b2c", "#6e261c"],
-    "mint":    ["#a8e3cf", "#74c2a8", "#4b917a"],
-    "lilac":   ["#cdb6ec", "#a68ad1", "#7a62a6"]
+    "_source": [
+      "#5a3a2b",
+      "#3f2618",
+      "#28170e"
+    ],
+    "brown": [
+      "#6b4532",
+      "#4a2e20",
+      "#2f1c13"
+    ],
+    "black": [
+      "#3e3c4a",
+      "#26242f",
+      "#15141b"
+    ],
+    "blonde": [
+      "#f6dc8f",
+      "#ddb766",
+      "#b48a45"
+    ],
+    "ash": [
+      "#c9c4cc",
+      "#9d97a3",
+      "#6f6977"
+    ],
+    "pink": [
+      "#f6b3cb",
+      "#e286a8",
+      "#b8607f"
+    ],
+    "red": [
+      "#c8553f",
+      "#9c3b2c",
+      "#6e261c"
+    ],
+    "mint": [
+      "#a8e3cf",
+      "#74c2a8",
+      "#4b917a"
+    ],
+    "lilac": [
+      "#cdb6ec",
+      "#a68ad1",
+      "#7a62a6"
+    ]
   },
   "hairStyles": [
-    { "id": "long",  "name": "긴머리", "back": "assets/hair/long_back.png",  "front": "assets/hair/long_front.png" },
-    { "id": "bob",   "name": "단발",   "back": "assets/hair/bob_back.png",   "front": "assets/hair/bob_front.png" },
-    { "id": "bun",   "name": "똥머리", "back": "assets/hair/bun_back.png",   "front": "assets/hair/bun_front.png" },
-    { "id": "short", "name": "숏컷",   "back": "assets/hair/short_back.png", "front": "assets/hair/short_front.png" }
+    {
+      "id": "long",
+      "name": "긴머리",
+      "back": "assets/hair/long_back.png",
+      "front": "assets/hair/long_front.png"
+    },
+    {
+      "id": "bob",
+      "name": "단발",
+      "back": "assets/hair/bob_back.png",
+      "front": "assets/hair/bob_front.png"
+    },
+    {
+      "id": "bun",
+      "name": "똥머리",
+      "back": "assets/hair/bun_back.png",
+      "front": "assets/hair/bun_front.png"
+    },
+    {
+      "id": "short",
+      "name": "숏컷",
+      "back": "assets/hair/short_back.png",
+      "front": "assets/hair/short_front.png"
+    }
   ],
   "faces": [
-    { "id": "smile",   "name": "웃음",   "src": "assets/face/smile.png",   "blink": "assets/face/smile_blink.png" },
-    { "id": "neutral", "name": "무표정", "src": "assets/face/neutral.png", "blink": "assets/face/neutral_blink.png" },
-    { "id": "wink",    "name": "윙크",   "src": "assets/face/wink.png",    "blink": "assets/face/wink_blink.png" },
-    { "id": "wow",     "name": "놀람",   "src": "assets/face/wow.png",     "blink": "assets/face/wow_blink.png" }
+    {
+      "id": "smile",
+      "name": "웃음",
+      "src": "assets/face/smile.png",
+      "blink": "assets/face/smile_blink.png"
+    },
+    {
+      "id": "neutral",
+      "name": "무표정",
+      "src": "assets/face/neutral.png",
+      "blink": "assets/face/neutral_blink.png"
+    },
+    {
+      "id": "wink",
+      "name": "윙크",
+      "src": "assets/face/wink.png",
+      "blink": "assets/face/wink_blink.png"
+    },
+    {
+      "id": "wow",
+      "name": "놀람",
+      "src": "assets/face/wow.png",
+      "blink": "assets/face/wow_blink.png"
+    },
+    {
+      "id": "happy",
+      "name": "신남",
+      "src": "assets/face/happy.png",
+      "blink": "assets/face/happy_blink.png"
+    }
   ],
   "backgrounds": [
-    { "id": "room",   "name": "내 방",    "src": "assets/bg/room.png" },
-    { "id": "street", "name": "거리",     "src": "assets/bg/street.png" },
-    { "id": "cafe",   "name": "카페",     "src": "assets/bg/cafe.png" },
-    { "id": "park",   "name": "공원",     "src": "assets/bg/park.png" },
-    { "id": "studio", "name": "스튜디오", "src": "assets/bg/studio.png" }
+    {
+      "id": "room",
+      "name": "내 방",
+      "src": "assets/bg/room.png"
+    },
+    {
+      "id": "street",
+      "name": "거리",
+      "src": "assets/bg/street.png"
+    },
+    {
+      "id": "cafe",
+      "name": "카페",
+      "src": "assets/bg/cafe.png"
+    },
+    {
+      "id": "park",
+      "name": "공원",
+      "src": "assets/bg/park.png"
+    },
+    {
+      "id": "studio",
+      "name": "스튜디오",
+      "src": "assets/bg/studio.png"
+    }
   ],
   "colorPresets": [
-    "#f4f1ea", "#2a2630", "#9a9aa6", "#c9a77a", "#7a4a2c", "#e05a5a",
-    "#f08fb0", "#f6a86b", "#f2cf5b", "#b8d66a", "#4f9a5c", "#8fd3c6",
-    "#7ea6d6", "#2e4a8a", "#a68ad1", "#6b2f4a"
+    "#f4f1ea",
+    "#2a2630",
+    "#9a9aa6",
+    "#c9a77a",
+    "#7a4a2c",
+    "#e05a5a",
+    "#f08fb0",
+    "#f6a86b",
+    "#f2cf5b",
+    "#b8d66a",
+    "#4f9a5c",
+    "#8fd3c6",
+    "#7ea6d6",
+    "#2e4a8a",
+    "#a68ad1",
+    "#6b2f4a"
   ],
   "defaults": {
     "skin": "medium",
     "hairStyle": "long",
     "hairColor": "brown",
     "face": "smile",
-    "background": "room"
+    "background": "room",
+    "bodyType": "regular"
   },
   "audio": {
     "bpm": 100,
     "bgm": null
+  },
+  "bodyTypes": [
+    {
+      "id": "slim",
+      "name": "마른",
+      "warp": [[50, 0], [56, -1], [70, -2], [84, -2], [96, -2], [112, -1], [124, 0]]
+    },
+    {
+      "id": "regular",
+      "name": "보통",
+      "warp": []
+    },
+    {
+      "id": "curvy",
+      "name": "통통",
+      "warp": [[50, 0], [56, 2], [64, 4], [76, 6], [88, 8], [100, 7], [112, 5], [124, 3]]
+    },
+    {
+      "id": "m_slim",
+      "name": "남 마른",
+      "underwear": "assets/base/underwear_m.png",
+      "warp": [[50, 0], [56, 1], [66, 0], [78, 0], [88, -1], [124, -1]]
+    },
+    {
+      "id": "m_regular",
+      "name": "남 보통",
+      "underwear": "assets/base/underwear_m.png",
+      "warp": [[50, 0], [56, 3], [66, 3], [78, 2], [88, 1], [124, 0]]
+    },
+    {
+      "id": "m_big",
+      "name": "남 건장",
+      "underwear": "assets/base/underwear_m.png",
+      "warp": [[50, 0], [56, 6], [66, 7], [78, 7], [90, 6], [104, 5], [116, 4], [124, 3]]
+    }
+  ],
+  "celebrateFace": "happy",
+  "celebrateText": "완성!",
+  "paintPalette": [
+    "#ffffff",
+    "#f4f1ea",
+    "#c8c4d0",
+    "#8a8796",
+    "#4a4656",
+    "#2a2630",
+    "#f6d9c8",
+    "#e8b6a0",
+    "#f9c6d6",
+    "#f08fb0",
+    "#e0569a",
+    "#b8326a",
+    "#ffb3a7",
+    "#e05a5a",
+    "#a8323a",
+    "#6b2f4a",
+    "#ffd8a8",
+    "#f6a86b",
+    "#d9772e",
+    "#8a4a2a",
+    "#fff2a8",
+    "#f2cf5b",
+    "#c9a77a",
+    "#7a5a3a",
+    "#dff2b0",
+    "#b8d66a",
+    "#4f9a5c",
+    "#2f5a3a",
+    "#c8f0e6",
+    "#8fd3c6",
+    "#3f9a9a",
+    "#1f4f5a",
+    "#d6e6ff",
+    "#7ea6d6",
+    "#3a6ab8",
+    "#2e4a8a",
+    "#e6d8ff",
+    "#a68ad1",
+    "#6a4aa8",
+    "#3a2a6a"
+  ],
+  "github": {
+    "repo": "minjoo311/pixel-dressup",
+    "branch": "main"
   }
 }
