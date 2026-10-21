@@ -1,0 +1,229 @@
+[
+  {
+    "id": "top_white_longsleeve",
+    "category": "top",
+    "name": "흰 긴팔 티셔츠",
+    "src": "assets/top/white_longsleeve.png",
+    "fit": "fitted",
+    "tags": [
+      "white",
+      "basic"
+    ]
+  },
+  {
+    "id": "top_green_tank",
+    "category": "top",
+    "name": "초록 나시",
+    "src": "assets/top/green_tank.png",
+    "fit": "fitted",
+    "tags": [
+      "green",
+      "layered"
+    ]
+  },
+  {
+    "id": "top_stripe_crop",
+    "category": "top",
+    "name": "스트라이프 크롭티",
+    "src": "assets/top/stripe_crop.png",
+    "fit": "fitted",
+    "tags": [
+      "navy",
+      "stripe",
+      "summer"
+    ]
+  },
+  {
+    "id": "top_pink_knit",
+    "category": "top",
+    "name": "핑크 니트",
+    "src": "assets/top/pink_knit.png",
+    "fit": "regular",
+    "tags": [
+      "pink",
+      "knit",
+      "winter"
+    ]
+  },
+  {
+    "id": "bottom_wide_denim",
+    "category": "bottom",
+    "name": "연청 와이드 팬츠",
+    "src": "assets/bottom/wide_denim.png",
+    "fit": "loose",
+    "tags": [
+      "blue",
+      "denim"
+    ]
+  },
+  {
+    "id": "bottom_black_mini",
+    "category": "bottom",
+    "name": "블랙 미니스커트",
+    "src": "assets/bottom/black_mini.png",
+    "fit": "regular",
+    "tags": [
+      "black",
+      "skirt"
+    ]
+  },
+  {
+    "id": "onepiece_yellow_slip",
+    "category": "onepiece",
+    "name": "노랑 슬립 원피스",
+    "src": "assets/onepiece/yellow_slip.png",
+    "fit": "fitted",
+    "tags": [
+      "yellow",
+      "summer"
+    ]
+  },
+  {
+    "id": "onepiece_red_gingham",
+    "category": "onepiece",
+    "name": "빨강 깅엄 원피스",
+    "src": "assets/onepiece/red_gingham.png",
+    "fit": "regular",
+    "tags": [
+      "red",
+      "check"
+    ],
+    "recolor": false
+  },
+  {
+    "id": "outer_beige_trench",
+    "category": "outer",
+    "name": "베이지 트렌치코트",
+    "src": "assets/outer/beige_trench.png",
+    "fit": "loose",
+    "tags": [
+      "beige",
+      "fall"
+    ]
+  },
+  {
+    "id": "outer_denim_jacket",
+    "category": "outer",
+    "name": "데님 크롭 재킷",
+    "src": "assets/outer/denim_jacket.png",
+    "fit": "regular",
+    "tags": [
+      "blue",
+      "denim"
+    ]
+  },
+  {
+    "id": "shoes_white_sneakers",
+    "category": "shoes",
+    "name": "흰 스니커즈",
+    "src": "assets/shoes/white_sneakers.png",
+    "tags": [
+      "white",
+      "casual"
+    ]
+  },
+  {
+    "id": "shoes_black_boots",
+    "category": "shoes",
+    "name": "블랙 롱부츠",
+    "src": "assets/shoes/black_boots.png",
+    "tags": [
+      "black",
+      "winter"
+    ]
+  },
+  {
+    "id": "socks_white_crew",
+    "category": "socks",
+    "name": "흰 크루삭스",
+    "src": "assets/socks/white_crew.png",
+    "tags": [
+      "white"
+    ]
+  },
+  {
+    "id": "socks_red_knee",
+    "category": "socks",
+    "name": "빨강 니삭스",
+    "src": "assets/socks/red_knee.png",
+    "tags": [
+      "red"
+    ]
+  },
+  {
+    "id": "belt_brown_belt",
+    "category": "belt",
+    "name": "브라운 벨트",
+    "src": "assets/belt/brown_belt.png",
+    "tags": [
+      "brown"
+    ]
+  },
+  {
+    "id": "bag_brown_crossbody",
+    "category": "bag",
+    "name": "브라운 크로스백",
+    "src": "assets/bag/brown_crossbody.png",
+    "tags": [
+      "brown"
+    ]
+  },
+  {
+    "id": "bag_canvas_tote",
+    "category": "bag",
+    "name": "캔버스 토트백",
+    "src": "assets/bag/canvas_tote.png",
+    "tags": [
+      "ivory",
+      "casual"
+    ]
+  },
+  {
+    "id": "jewelry_gold_necklace",
+    "category": "jewelry",
+    "name": "골드 펜던트 목걸이",
+    "src": "assets/jewelry/gold_necklace.png",
+    "tags": [
+      "gold"
+    ]
+  },
+  {
+    "id": "jewelry_pearl_earrings",
+    "category": "jewelry",
+    "name": "진주 귀걸이",
+    "src": "assets/jewelry/pearl_earrings.png",
+    "tags": [
+      "white"
+    ],
+    "recolor": false
+  },
+  {
+    "id": "accessory_red_beret",
+    "category": "accessory",
+    "name": "빨강 베레모",
+    "src": "assets/accessory/red_beret.png",
+    "tags": [
+      "red",
+      "fall"
+    ]
+  },
+  {
+    "id": "accessory_round_glasses",
+    "category": "accessory",
+    "name": "동그란 안경",
+    "src": "assets/accessory/round_glasses.png",
+    "tags": [
+      "brown"
+    ]
+  },
+  {
+    "id": "accessory_pink_ribbon",
+    "category": "accessory",
+    "name": "핑크 리본핀",
+    "src": "assets/accessory/pink_ribbon.png",
+    "tags": [
+      "pink",
+      "cute"
+    ]
+  }
+]
