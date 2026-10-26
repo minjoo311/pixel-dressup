@@ -4,11 +4,11 @@
 // - 이 기기(IndexedDB)에 바로 저장 → 게임에 즉시 반영
 // - GitHub 토큰을 넣으면 "온라인 저장" → 커밋 1개로 올리고 Vercel이 자동 배포 (모든 기기에서 보임)
 import { $, el, esc, idb, store, toCanvas, canvasToBlob, blobToBase64, hexToInt, thumb, bbox } from "./util.js";
+import { aiToken, buildMask, maskCanvas, maskOverlay, getBalance, inpaint, extractGarment } from "./ai.js";
 
 const GH_KEY = "pixelcloset.v1.github";
-const AV = 128;
-const BG_W = 160;
-const BG_H = 192;
+// 크기는 게임 설정에서 받아와요
+const S = () => game.sizes();
 
 let game;
 let drafts = [];
@@ -41,8 +41,71 @@ function buildDom() {
         <button class="icon-btn" id="adminClose" aria-label="닫기"><img class="icon" src="assets/ui/icon_x.png" alt=""></button>
       </header>
       <div class="admin-body">
+        <section class="card ai-card">
+          <h3>✨ AI로 옷 만들기 <span class="badge">PixelLab</span></h3>
+          <div class="field">
+            <label for="aiToken">API 토큰</label>
+            <div class="row-btn">
+              <input type="password" id="aiToken" placeholder="PixelLab API token" autocomplete="off">
+              <button class="btn small" id="aiBalance">확인</button>
+            </div>
+          </div>
+          <p class="hint" id="aiTokenHint">토큰은 이 기기 브라우저에만 저장돼요. pixellab.ai → 계정 설정에서 복사해요.</p>
+          <div class="ai-grid">
+            <div class="ai-form">
+              <div class="field">
+                <label for="aiCat">종류</label>
+                <select id="aiCat"></select>
+              </div>
+              <div class="field">
+                <label for="aiFit">핏</label>
+                <select id="aiFit">
+                  <option value="fitted">fitted (딱 붙음)</option>
+                  <option value="regular" selected>regular (보통)</option>
+                  <option value="loose">loose (넉넉)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="aiCount">한 줄당</label>
+                <select id="aiCount">
+                  <option value="1">1장</option><option value="2">2장 (골라 쓰기)</option><option value="3">3장</option>
+                </select>
+              </div>
+              <label class="check"><input type="checkbox" id="aiLayer"> 지금 입은 옷 위에 그리기 (레이어드)</label>
+            </div>
+            <div class="ai-mask checker" id="aiMaskPv" title="분홍색 부분이 다시 그려져요"></div>
+          </div>
+          <div class="field col">
+            <label for="aiLines">옷 설명 (영어로, <b>한 줄에 하나씩</b> → 한 번에 여러 개 생성)</label>
+            <textarea id="aiLines" rows="4" placeholder="white oversized long sleeve t-shirt"></textarea>
+          </div>
+          <details class="gh-help">
+            <summary>고급 설정 (프롬프트)</summary>
+            <div class="field col">
+              <label for="aiBase">기본 프롬프트 ({item} 자리에 옷 설명이 들어가요)</label>
+              <textarea id="aiBase" rows="3"></textarea>
+            </div>
+            <div class="field col">
+              <label for="aiNeg">피할 것</label>
+              <input type="text" id="aiNeg">
+            </div>
+            <div class="field">
+              <label for="aiGuide">설명 반영 강도</label>
+              <input type="range" id="aiGuide" min="1" max="10" step="0.5">
+            </div>
+            <div class="admin-actions">
+              <button class="btn small" id="aiResetPrompt">기본값으로</button>
+              <button class="btn small" id="aiMaskDl">마스크 PNG 받기</button>
+            </div>
+          </details>
+          <div class="admin-actions">
+            <button class="btn small primary" id="aiGo"><img class="icon" src="assets/ui/icon_star.png" alt="">생성하기</button>
+          </div>
+          <p class="hint" id="aiStatus"></p>
+        </section>
+
         <section class="card">
-          <h3>1. 무엇을 추가할까요?</h3>
+          <h3>직접 그린 그림 올리기</h3>
           <div class="field">
             <label for="adKind">종류</label>
             <select id="adKind"></select>
@@ -84,7 +147,7 @@ function buildDom() {
         </section>
 
         <section class="card" id="adDraftCard" hidden>
-          <h3>2. 확인하고 추가하기</h3>
+          <h3>확인하고 추가하기</h3>
           <div id="adDrafts" class="drafts"></div>
           <div class="admin-actions">
             <button class="btn small" id="adClearDrafts">모두 취소</button>
@@ -134,8 +197,10 @@ function buildDom() {
   back.addEventListener("click", (e) => { if (e.target === back) closeAdmin(); });
 
   const kind = $("#adKind");
+  const tabOrder = game.options().tabOrder || [];
+  const tr = (k) => (tabOrder.indexOf(k) < 0 ? 99 : tabOrder.indexOf(k));
   kind.innerHTML = `<option value="bg">배경</option>` +
-    game.categories().map((c) => `<option value="${c.key}">${esc(c.name)}</option>`).join("");
+    game.categories().slice().sort((a, b) => tr(a.key) - tr(b.key)).map((c) => `<option value="${c.key}">${esc(c.name)}</option>`).join("");
   kind.value = "top";
   kind.onchange = syncForm;
   back.querySelectorAll("input[name=adUse]").forEach((r) => (r.onchange = syncForm));
@@ -154,6 +219,7 @@ function buildDom() {
   $("#ghToken").onchange = saveGh;
   $("#ghForget").onclick = () => { $("#ghToken").value = ""; saveGh(); status("토큰을 지웠어요"); };
   $("#ghPublish").onclick = () => { saveGh(); publish(); };
+  initAI();
 }
 
 const isBg = () => $("#adKind").value === "bg";
@@ -171,13 +237,15 @@ function syncForm() {
       .map((i) => `<option value="${i.id}">${esc(i.name)}</option>`).join("") || `<option value="">(이 종류에 아이템이 없어요)</option>`;
     $("#adVarBody").innerHTML = game.bodyTypes().map((b) => `<option value="${b.id}">${esc(b.name)} 체형</option>`).join("");
   }
+  const { AV_W, AV_H, STAGE_W, STAGE_H } = S();
   $("#adHint").innerHTML = bg
-    ? `배경은 <b>160×192</b>로 맞춰져요. 크기가 다르면 비율을 유지한 채 잘라서 채워요.`
-    : `옷은 <b>128×128</b> (기준 바디와 같은 위치)이어야 해요. 2배·4배처럼 정수배로 큰 그림은 자동으로 줄여요.<br>
+    ? `배경은 <b>${STAGE_W}×${STAGE_H}</b>로 맞춰져요. 크기가 다르면 비율을 유지한 채 잘라서 채워요.`
+    : `옷은 <b>${AV_W}×${AV_H}</b> (기준 바디와 같은 위치)이어야 해요. 2배·4배처럼 정수배로 큰 그림은 자동으로 줄여요.<br>
        PixelLab에서 <b>기준 바디</b> 위에 인페인팅한 결과를 그대로 올리면 옷만 쏙 빼서 저장해요.`;
 }
 
 function renderAll() {
+  syncAIForm();
   syncForm();
   renderDrafts();
   renderList();
@@ -232,12 +300,12 @@ function fitSize(im, tw, th, bg, warn) {
     const s = Math.max(tw / w, th / h);
     const dw = Math.round(w * s), dh = Math.round(h * s);
     ctx.drawImage(im, Math.round((tw - dw) / 2), Math.round((th - dh) / 2), dw, dh);
-    warn.push(`크기가 ${w}×${h}라서 160×192에 맞게 잘랐어요. 픽셀이 살짝 뭉개질 수 있어요`);
+    warn.push(`크기가 ${w}×${h}라서 ${tw}×${th}에 맞게 잘랐어요. 픽셀이 살짝 뭉개질 수 있어요`);
   } else {
     const s = Math.min(tw / w, th / h);
     const dw = Math.round(w * s), dh = Math.round(h * s);
     ctx.drawImage(im, Math.round((tw - dw) / 2), th - dh, dw, dh);
-    warn.push(`⚠️ 크기가 ${w}×${h}예요. 128×128(또는 정수배)이 아니면 몸에 정확히 안 맞을 수 있어요`);
+    warn.push(`⚠️ 크기가 ${w}×${h}예요. ${tw}×${th}(또는 정수배)이 아니면 몸에 정확히 안 맞을 수 있어요`);
   }
   return c;
 }
@@ -337,7 +405,17 @@ function nudgeReserved(img, warn) {
 async function processDraft(draft) {
   const bg = draft.kind === "bg";
   const warn = [];
-  const c = fitSize(draft.image, bg ? BG_W : AV, bg ? BG_H : AV, bg, warn);
+  if (draft.ai) {
+    draft.canvas = extractGarment(draft.ai, +$("#adTol").value);
+    draft.warn = draft.ai.warn || [];
+    let opaque = 0;
+    const dd = draft.canvas.getContext("2d").getImageData(0, 0, draft.canvas.width, draft.canvas.height).data;
+    for (let i = 3; i < dd.length; i += 4) if (dd[i]) opaque++;
+    if (!opaque) draft.warn = [...draft.warn, "⚠️ 달라진 부분이 거의 없어요. 다시 생성하거나 민감도를 낮춰 보세요"];
+    return;
+  }
+  const { AV_W, AV_H, STAGE_W, STAGE_H } = S();
+  const c = fitSize(draft.image, bg ? STAGE_W : AV_W, bg ? STAGE_H : AV_H, bg, warn);
   const ctx = c.getContext("2d", { willReadFrequently: true });
   const img = ctx.getImageData(0, 0, c.width, c.height);
   if (bg) {
@@ -345,7 +423,7 @@ async function processDraft(draft) {
   } else {
     cleanAlpha(img);
     removeFlatBackground(img, warn);
-    const ref = game.referenceCanvas().getContext("2d").getImageData(0, 0, AV, AV);
+    const ref = game.referenceCanvas().getContext("2d").getImageData(0, 0, AV_W, AV_H);
     let mode = draft.mode;
     if (mode === "auto") {
       const ratio = dressedRatio(img, ref);
@@ -404,7 +482,7 @@ function renderDrafts() {
     const raw = el("div", "checker");
     raw.append(thumb(d.canvas, bbox(d.canvas) || { x: 0, y: 0, w: d.canvas.width, h: d.canvas.height }, 80));
     const on = el("div", "checker");
-    on.append(thumb(game.previewWith(d.canvas, d.kind, d.variant), { x: 0, y: 0, w: BG_W, h: BG_H }, 110));
+    on.append(thumb(game.previewWith(d.canvas, d.kind, d.variant), { x: 0, y: 0, w: S().STAGE_W, h: S().STAGE_H }, 120));
     pv.append(raw, on);
     card.append(pv);
 
@@ -542,10 +620,13 @@ async function removeCustom(c) {
 
 // ================================================================ reference download
 function downloadReference() {
+  const { AV_W, AV_H } = S();
   const c = game.referenceCanvas();
-  const big = blankCanvas(AV * 4, AV * 4);
-  big.getContext("2d").drawImage(c, 0, 0, AV * 4, AV * 4);
-  for (const [canvas, name] of [[c, "body_reference_128.png"], [big, "body_reference_512.png"]]) {
+  const big = blankCanvas(AV_W * 4, AV_H * 4);
+  const bctx = big.getContext("2d");
+  bctx.imageSmoothingEnabled = false;
+  bctx.drawImage(c, 0, 0, AV_W * 4, AV_H * 4);
+  for (const [canvas, name] of [[c, `body_reference_${AV_W}x${AV_H}.png`], [big, `body_reference_${AV_W * 4}x${AV_H * 4}.png`]]) {
     canvas.toBlob((blob) => {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -555,7 +636,7 @@ function downloadReference() {
       a.remove();
     });
   }
-  game.toast("기준 바디 (128px, 512px) 를 저장했어요");
+  game.toast("기준 바디 (원본, 4배) 를 저장했어요");
 }
 
 // ================================================================ GitHub
@@ -674,5 +755,182 @@ async function publish() {
     game.sound.play("error");
   } finally {
     btn.disabled = false;
+  }
+}
+
+// ================================================================ AI 생성
+const AI_PROMPT_KEY = "pixelcloset.v1.aiPrompt";
+let aiBusy = false;
+let aiSpent = 0;
+
+function aiOpt() {
+  const o = game.options().ai || {};
+  const saved = store.get(AI_PROMPT_KEY, null) || {};
+  return {
+    basePrompt: saved.basePrompt || o.basePrompt || "full body pixel art character, front view, wearing {item}",
+    negative: saved.negative ?? o.negative ?? "",
+    guidance: saved.guidance || o.guidance || 6,
+    fitWords: o.fitWords || {},
+    fitGrow: o.fitGrow || { fitted: 0, regular: 1, loose: 3 },
+    masks: o.masks || {},
+    hints: o.hints || {},
+  };
+}
+
+function initAI() {
+  const o = aiOpt();
+  const order = game.options().tabOrder || [];
+  const rank = (k) => (order.indexOf(k) < 0 ? 99 : order.indexOf(k));
+  const cats = game.categories().filter((c) => o.masks[c.key]).sort((a, b) => rank(a.key) - rank(b.key));
+  $("#aiCat").innerHTML = cats.map((c) => `<option value="${c.key}">${esc(c.name)}</option>`).join("");
+  $("#aiCat").value = cats[0] ? cats[0].key : "";
+  $("#aiToken").value = aiToken.get();
+  $("#aiToken").onchange = () => { aiToken.set($("#aiToken").value); aiStatusMsg(""); };
+  $("#aiBalance").onclick = checkBalance;
+  ["#aiCat", "#aiFit", "#aiLayer"].forEach((s) => ($(s).onchange = syncAIForm));
+  $("#aiBase").value = o.basePrompt;
+  $("#aiNeg").value = o.negative;
+  $("#aiGuide").value = o.guidance;
+  const savePrompt = () => store.set(AI_PROMPT_KEY, { basePrompt: $("#aiBase").value, negative: $("#aiNeg").value, guidance: +$("#aiGuide").value });
+  ["#aiBase", "#aiNeg", "#aiGuide"].forEach((s) => ($(s).onchange = savePrompt));
+  $("#aiResetPrompt").onclick = () => {
+    store.set(AI_PROMPT_KEY, null);
+    const d = aiOpt();
+    $("#aiBase").value = d.basePrompt;
+    $("#aiNeg").value = d.negative;
+    $("#aiGuide").value = d.guidance;
+  };
+  $("#aiMaskDl").onclick = () => {
+    const mk = currentMask();
+    maskCanvas(mk).toBlob((b) => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = `mask_${$("#aiCat").value}_${$("#aiFit").value}.png`;
+      document.body.append(a); a.click(); a.remove();
+    });
+  };
+  $("#aiGo").onclick = generateAll;
+  syncAIForm();
+}
+
+function aiBase() {
+  return game.referenceCanvas({ withWorn: $("#aiLayer").checked });
+}
+
+function currentMask() {
+  const o = aiOpt();
+  const cat = $("#aiCat").value;
+  return buildMask(o.masks[cat], o.fitGrow[$("#aiFit").value] || 0, game.referenceCanvas());
+}
+
+function syncAIForm() {
+  if (!$("#aiCat") || !$("#aiCat").value) return;
+  const o = aiOpt();
+  const pv = $("#aiMaskPv");
+  pv.innerHTML = "";
+  const base = aiBase();
+  pv.append(thumb(maskOverlay(base, currentMask()), { x: 0, y: 0, w: base.width, h: base.height }, 150));
+  $("#aiLines").placeholder = (o.hints[$("#aiCat").value] || "").replace(/^예:\s*/, "") + "\n(여러 개면 줄을 바꿔서)";
+}
+
+function aiStatusMsg(msg) {
+  $("#aiStatus").textContent = msg;
+}
+
+async function checkBalance() {
+  aiToken.set($("#aiToken").value);
+  const t = aiToken.get();
+  if (!t) return aiStatusMsg("토큰을 먼저 넣어 주세요");
+  aiStatusMsg("확인 중…");
+  try {
+    const b = await getBalance(t);
+    const usd = b && (b.usd ?? (b.credits && b.credits.usd));
+    const gens = b && (b.generations ?? (b.subscription && b.subscription.generations));
+    const parts = [];
+    if (usd != null) parts.push(`$${Number(usd).toFixed(2)}`);
+    if (gens != null) parts.push(`${gens} generations`);
+    aiStatusMsg(`연결됐어요! 잔액: ${parts.length ? parts.join(" · ") : JSON.stringify(b).slice(0, 120)}`);
+    game.sound.play("select");
+  } catch (e) {
+    aiStatusMsg(`실패: ${e.message}`);
+    game.sound.play("error");
+  }
+}
+
+function usageText(u) {
+  if (!u) return "";
+  if (u.usd != null) { aiSpent += u.usd; return ` · 이번에 쓴 금액 약 $${aiSpent.toFixed(3)}`; }
+  if (u.generations != null) { aiSpent += u.generations; return ` · 이번에 쓴 generation ${aiSpent}`; }
+  return "";
+}
+
+async function generateAll() {
+  if (aiBusy) return;
+  aiToken.set($("#aiToken").value);
+  const token = aiToken.get();
+  if (!token) { aiStatusMsg("PixelLab API 토큰을 먼저 넣어 주세요"); game.sound.play("error"); return; }
+  const lines = $("#aiLines").value.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) { aiStatusMsg("만들 옷 설명을 적어 주세요"); game.sound.play("error"); return; }
+
+  const o = aiOpt();
+  const cat = $("#aiCat").value;
+  const fit = $("#aiFit").value;
+  const count = +$("#aiCount").value;
+  const base = aiBase();
+  const mk = currentMask();
+  const mask = maskCanvas(mk);
+  const jobs = [];
+  for (const line of lines) for (let k = 0; k < count; k++) jobs.push({ line, k });
+
+  aiBusy = true;
+  $("#aiGo").disabled = true;
+  let done = 0, failed = 0;
+  aiStatusMsg(`0/${jobs.length} 생성 중… (한 장에 10~40초쯤 걸려요)`);
+  game.sound.play("brushOn");
+
+  const run = async (job) => {
+    const fitWord = o.fitWords[fit] ? `${o.fitWords[fit]} ` : "";
+    const item = `${fitWord}${job.line}`;
+    const description = o.basePrompt.includes("{item}") ? o.basePrompt.replace("{item}", item) : `${o.basePrompt}, wearing ${item}`;
+    try {
+      const { image, usage } = await inpaint({
+        token, description, negative: o.negative, guidance: o.guidance,
+        base, mask, seed: Math.floor(Math.random() * 1e9),
+      });
+      done++;
+      const draft = {
+        key: Math.random().toString(36).slice(2),
+        kind: cat, image: null,
+        name: job.line.slice(0, 28) + (count > 1 ? ` ${job.k + 1}` : ""),
+        mode: "ai", fit, recolor: true, variant: null,
+        ai: { result: image, base, mask: mk, warn: [`AI 생성: "${item}"`] },
+      };
+      await processDraft(draft);
+      drafts.push(draft);
+      renderDrafts();
+      aiStatusMsg(`${done + failed}/${jobs.length} 완료${failed ? ` (실패 ${failed})` : ""}${usageText(usage)}`);
+      game.sound.play("equip");
+    } catch (e) {
+      failed++;
+      aiStatusMsg(`${done + failed}/${jobs.length} · "${job.line}" 실패: ${e.message}`);
+      game.sound.play("error");
+      if (e.status === 401 || e.status === 402) throw e;
+    }
+  };
+
+  try {
+    const queue = jobs.slice();
+    const worker = async () => { while (queue.length) await run(queue.shift()); };
+    await Promise.all([worker(), worker()]);
+    if (done) {
+      aiStatusMsg(`끝! ${done}장 생성${failed ? `, ${failed}장 실패` : ""}. 아래에서 확인하고 "추가"를 눌러 주세요${usageText(null)}`);
+      game.sound.play("fanfare");
+      $("#adDraftCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  } catch (e) {
+    aiStatusMsg(`중단: ${e.message}`);
+  } finally {
+    aiBusy = false;
+    $("#aiGo").disabled = false;
   }
 }

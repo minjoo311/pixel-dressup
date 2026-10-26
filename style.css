@@ -625,3 +625,17 @@ body.recording .btn.rec .icon { filter: invert(1); }
 .gh-help { font-size: 11px; line-height: 1.6; margin: 6px 0; }
 .gh-help summary { cursor: var(--cur-pointer); font-weight: 700; }
 .gh-help ol { padding-left: 18px; margin: 6px 0; }
+
+/* ============================================================ AI 생성 */
+.ai-card { background: #fffaf2; }
+.row-btn { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.ai-grid { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; }
+.ai-mask { padding: 4px; }
+.field.col { grid-template-columns: 1fr; gap: 4px; }
+.admin textarea {
+  font: inherit; width: 100%; resize: vertical;
+  border: 2px solid var(--ink); background: #fff; padding: 6px; border-radius: 0; line-height: 1.5;
+}
+#aiStatus { font-weight: 700; color: var(--ink); }
+#aiGo:disabled { opacity: .5; }
+@media (max-width: 380px) { .ai-grid { grid-template-columns: 1fr; } .ai-mask { justify-self: center; } }

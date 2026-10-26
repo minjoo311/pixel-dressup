@@ -7,17 +7,19 @@ import {
 } from "./util.js";
 
 // ================================================================ constants
-const STAGE_W = 160;
-const STAGE_H = 192;
-const AV = 128;
-const AV_X = 16;
-const AV_Y = 56;
+// 크기는 options.json의 stage / body에서 읽어요 (boot에서 설정)
+let STAGE_W = 160;
+let STAGE_H = 240;
+let AV_W = 128;
+let AV_H = 192;
+let AV_X = 16;
+let AV_Y = 46;
 const HAIR = "__hair_front";
 const STORE_CUR = "pixelcloset.v1.current";
 const STORE_SLOTS = "pixelcloset.v1.slots";
 const STORE_RECENT = "pixelcloset.v1.recentColors";
 const SLOT_COUNT = 3;
-const BRUSH_BTN = { x: 138, y: 4, w: 18, h: 18 };
+let BRUSH_BTN = { x: 138, y: 4, w: 18, h: 18 };
 const REC_SCALE = 6; // 녹화 해상도 960×1152
 
 // ================================================================ data
@@ -142,28 +144,23 @@ const itemShift = (it, hex) => shiftTo(avgHsl(it.src), hex);
 const bodyTypes = () => OPT.bodyTypes || [{ id: "regular", name: "보통", warp: [] }];
 const bodyTypeOf = (id) => bodyTypes().find((b) => b.id === id) || bodyTypes()[0];
 
-let CORE_L = null, CORE_R = null;
-// 기준 바디에서 행마다 "몸통/다리" 반폭을 측정 (팔은 몸통 밖이면 평행이동, 몸통은 늘어남)
+let CORE_L = null, CORE_R = null, CX = 64;
+// 기준 바디에서 행마다 몸의 좌우 끝까지 거리를 측정 → 그 안은 늘어나고, 바깥은 평행이동
 function measureCore() {
   const im = getImg(OPT.body.body);
-  CORE_L = new Int16Array(AV);
-  CORE_R = new Int16Array(AV);
+  CORE_L = new Int16Array(AV_H);
+  CORE_R = new Int16Array(AV_H);
   if (!im) return;
+  const b = bbox(im);
+  CX = b ? Math.round(b.x + b.w / 2) : AV_W / 2;
   const { data: d } = pixels(im);
-  const a = (x, y) => d[(y * AV + x) * 4 + 3];
-  for (let y = 0; y < AV; y++) {
-    let x = 63, skip = 0;
-    while (x >= 0 && !a(x, y) && skip < 8) { x--; skip++; }
-    if (x < 0 || !a(x, y)) { CORE_L[y] = 0; } else {
-      while (x >= 0 && a(x, y)) x--;
-      CORE_L[y] = 64 - (x + 1);
+  for (let y = 0; y < AV_H; y++) {
+    let x0 = -1, x1 = -1;
+    for (let x = 0; x < AV_W; x++) {
+      if (d[(y * AV_W + x) * 4 + 3]) { if (x0 < 0) x0 = x; x1 = x; }
     }
-    x = 64; skip = 0;
-    while (x < AV && !a(x, y) && skip < 8) { x++; skip++; }
-    if (x >= AV || !a(x, y)) { CORE_R[y] = 0; } else {
-      while (x < AV && a(x, y)) x++;
-      CORE_R[y] = x - 64;
-    }
+    CORE_L[y] = x0 < 0 ? 0 : Math.max(0, CX - x0);
+    CORE_R[y] = x0 < 0 ? 0 : Math.max(0, x1 + 1 - CX);
   }
 }
 
@@ -188,26 +185,26 @@ function warpMap(typeId) {
     warpMaps.set(typeId, null);
     return null;
   }
-  const map = new Int16Array(AV * AV).fill(-1);
-  for (let y = 0; y < AV; y++) {
+  const map = new Int16Array(AV_W * AV_H).fill(-1);
+  for (let y = 0; y < AV_H; y++) {
     const dd = Math.round(deltaAt(bt.warp, y));
-    for (let x = 0; x < AV; x++) {
+    for (let x = 0; x < AV_W; x++) {
       const p = x + 0.5;
       let s;
       if (!dd) s = p;
-      else if (p < 64) {
+      else if (p < CX) {
         const h = CORE_L[y];
         if (h <= 0) s = p;
-        else if (p < 64 - h - dd) s = p + dd;
-        else s = 64 - ((64 - p) * h) / Math.max(1, h + dd);
+        else if (p < CX - h - dd) s = p + dd;
+        else s = CX - ((CX - p) * h) / Math.max(1, h + dd);
       } else {
         const h = CORE_R[y];
         if (h <= 0) s = p;
-        else if (p >= 64 + h + dd) s = p - dd;
-        else s = 64 + ((p - 64) * h) / Math.max(1, h + dd);
+        else if (p >= CX + h + dd) s = p - dd;
+        else s = CX + ((p - CX) * h) / Math.max(1, h + dd);
       }
       const sx = Math.floor(s);
-      map[y * AV + x] = sx >= 0 && sx < AV ? sx : -1;
+      map[y * AV_W + x] = sx >= 0 && sx < AV_W ? sx : -1;
     }
   }
   warpMaps.set(typeId, map);
@@ -218,21 +215,22 @@ const warpCache = new WeakMap();
 function warp(source, typeId) {
   if (!source) return null;
   const map = warpMap(typeId);
-  if (!map || source.width !== AV || source.height !== AV) return source;
+  if (!map || source.width !== AV_W || source.height !== AV_H) return source;
   let per = warpCache.get(source);
   if (!per) warpCache.set(source, (per = new Map()));
   if (per.has(typeId)) return per.get(typeId);
   const src = pixels(source).data;
   const c = document.createElement("canvas");
-  c.width = c.height = AV;
+  c.width = AV_W;
+  c.height = AV_H;
   const ctx = c.getContext("2d", { willReadFrequently: true });
-  const out = ctx.createImageData(AV, AV);
+  const out = ctx.createImageData(AV_W, AV_H);
   const o = out.data;
-  for (let y = 0; y < AV; y++) {
-    for (let x = 0; x < AV; x++) {
-      const sx = map[y * AV + x];
+  for (let y = 0; y < AV_H; y++) {
+    for (let x = 0; x < AV_W; x++) {
+      const sx = map[y * AV_W + x];
       if (sx < 0) continue;
-      const si = (y * AV + sx) * 4, di = (y * AV + x) * 4;
+      const si = (y * AV_W + sx) * 4, di = (y * AV_W + x) * 4;
       o[di] = src[si]; o[di + 1] = src[si + 1]; o[di + 2] = src[si + 2]; o[di + 3] = src[si + 3];
     }
   }
@@ -244,8 +242,12 @@ function warp(source, typeId) {
 // ================================================================ layers
 const findBy = (arr, id) => arr.find((x) => x.id === id) || arr[0];
 
+const HAS_SKIN = () => !!(OPT.skinRamps && OPT.skinRamps._source);
+const HAS_HAIR = () => !!(OPT.hairStyles && OPT.hairStyles.length);
+
 function bodyLayer(st) {
   const bt = bodyTypeOf(st.bodyType);
+  if (!HAS_SKIN()) return warp(getImg(bt.body || OPT.body.body), bt.body ? "regular" : st.bodyType);
   const ramp = OPT.skinRamps[st.skin] || OPT.skinRamps._source;
   if (bt.body) return paletteSwap(bt.body, OPT.skinRamps._source, ramp);
   return warp(paletteSwap(OPT.body.body, OPT.skinRamps._source, ramp), st.bodyType);
@@ -254,7 +256,8 @@ function bodyLayer(st) {
 function underwearLayer(st) {
   const bt = bodyTypeOf(st.bodyType);
   if (bt.body && bt.underwear) return getImg(bt.underwear);
-  return warp(getImg(bt.underwear || OPT.body.underwear), st.bodyType);
+  const src = bt.underwear || OPT.body.underwear;
+  return src ? warp(getImg(src), st.bodyType) : null;
 }
 
 function hairAvg(st) {
@@ -263,6 +266,7 @@ function hairAvg(st) {
 }
 
 function hairLayer(st, which) {
+  if (!HAS_HAIR()) return null;
   const hair = findBy(OPT.hairStyles, st.hairStyle);
   const ramp = OPT.hairRamps[st.hairColor] || OPT.hairRamps._source;
   const src = which === "back" ? hair.back : hair.front;
@@ -295,7 +299,7 @@ function layerStack(st, { blink = false, faceOverride = null, extra = null } = {
   const out = [];
   const hidden = hiddenSet(st.worn);
   const face = findBy(OPT.faces, faceOverride || st.face);
-  if (!hidden.has("hair_back")) out.push({ kind: "hair", canvas: hairLayer(st, "back") });
+  if (HAS_HAIR() && !hidden.has("hair_back")) out.push({ kind: "hair", canvas: hairLayer(st, "back") });
   for (const e of st.worn) {
     const it = ITEM_BY_ID[e.id];
     if (it && it.extraLayers) {
@@ -308,7 +312,7 @@ function layerStack(st, { blink = false, faceOverride = null, extra = null } = {
   out.push({ kind: "face", canvas: warp(getImg(blink && face.blink ? face.blink : face.src), st.bodyType) });
   for (const e of st.worn) {
     if (e.id === HAIR) {
-      if (!hidden.has("hair_front")) out.push({ kind: "hair", canvas: hairLayer(st, "front") });
+      if (HAS_HAIR() && !hidden.has("hair_front")) out.push({ kind: "hair", canvas: hairLayer(st, "front") });
       continue;
     }
     const it = ITEM_BY_ID[e.id];
@@ -324,13 +328,18 @@ function layerStack(st, { blink = false, faceOverride = null, extra = null } = {
 }
 
 function composeAvatar(ctx, st, opts = {}) {
-  ctx.clearRect(0, 0, AV, AV);
+  ctx.clearRect(0, 0, AV_W, AV_H);
   for (const l of layerStack(st, opts)) if (l.canvas) ctx.drawImage(l.canvas, 0, 0);
 }
 
 // ================================================================ stage rendering
 const avCanvas = document.createElement("canvas");
-avCanvas.width = avCanvas.height = AV;
+function sizeAvatarCanvas() {
+  avCanvas.width = AV_W;
+  avCanvas.height = AV_H;
+  stageCanvas.width = STAGE_W;
+  stageCanvas.height = STAGE_H;
+}
 const avCtx = avCanvas.getContext("2d");
 
 const stageCanvas = document.createElement("canvas");
@@ -547,7 +556,7 @@ function renderStage(ctx, t, st = state, { motion = true, overlay = true } = {})
   const shadow = getImg(OPT.body.shadow);
   if (shadow) {
     ctx.globalAlpha = 0.25;
-    ctx.drawImage(shadow, AV_X, AV_Y + 116);
+    ctx.drawImage(shadow, AV_X, AV_Y + (OPT.body.shadowY ?? AV_H - 12));
     ctx.globalAlpha = 1;
   }
 
@@ -560,9 +569,9 @@ function renderStage(ctx, t, st = state, { motion = true, overlay = true } = {})
   const beat = 60000 / (OPT.audio.bpm || 100);
   const breathe = motion && Math.floor(t / beat) % 2 === 1;
   if (breathe) {
-    const split = OPT.body.breathSplitY || 76;
-    ctx.drawImage(avCanvas, 0, split, AV, AV - split, AV_X, y + split, AV, AV - split);
-    ctx.drawImage(avCanvas, 0, 0, AV, split, AV_X, y + 1, AV, split);
+    const split = OPT.body.breathSplitY || Math.round(AV_H * 0.55);
+    ctx.drawImage(avCanvas, 0, split, AV_W, AV_H - split, AV_X, y + split, AV_W, AV_H - split);
+    ctx.drawImage(avCanvas, 0, 0, AV_W, split, AV_X, y + 1, AV_W, split);
   } else {
     ctx.drawImage(avCanvas, AV_X, y);
   }
@@ -631,7 +640,8 @@ function toggleItem(id) {
 
 function move(id, dir) {
   const i = wornIndex(id);
-  const j = i + dir;
+  let j = i + dir;
+  if (!HAS_HAIR() && state.worn[j] && state.worn[j].id === HAIR) j += dir;
   if (i < 0 || j < 0 || j >= state.worn.length) return;
   [state.worn[i], state.worn[j]] = [state.worn[j], state.worn[i]];
   sound.play(dir > 0 ? "up" : "down");
@@ -700,7 +710,7 @@ function pickPaintColor(hex) {
 function hitTest(sx, sy) {
   const ax = Math.floor(sx - AV_X);
   const ay = Math.floor(sy - (AV_Y + avatarOffset(performance.now())));
-  if (ax < 0 || ay < 0 || ax >= AV || ay >= AV) return null;
+  if (ax < 0 || ay < 0 || ax >= AV_W || ay >= AV_H) return null;
   const stack = layerStack(state);
   for (let i = stack.length - 1; i >= 0; i--) {
     const l = stack[i];
@@ -869,14 +879,14 @@ function customList() {
 }
 
 // 인페인팅 기준 바디: 원본 피부색(예약색) + 여성 속옷 + 기본 얼굴, 머리 없음
-function referenceCanvas() {
+// withWorn: 지금 입고 있는 옷까지 그린 기준 그림 (레이어드용)
+function referenceCanvas({ withWorn = false } = {}) {
   const c = document.createElement("canvas");
-  c.width = c.height = AV;
+  c.width = AV_W;
+  c.height = AV_H;
   const ctx = c.getContext("2d");
-  ctx.drawImage(getImg(OPT.body.body), 0, 0);
-  ctx.drawImage(getImg(OPT.body.underwear), 0, 0);
-  const face = findBy(OPT.faces, "neutral");
-  if (getImg(face.src)) ctx.drawImage(getImg(face.src), 0, 0);
+  const st = { ...state, bodyType: "regular", face: OPT.defaults?.face || state.face, worn: withWorn ? state.worn : [{ id: HAIR }] };
+  composeAvatar(ctx, st);
   return c;
 }
 
@@ -910,7 +920,7 @@ function previewWith(layer, kind, variant) {
 function tabsList() {
   return [
     { key: "body", name: "바디" },
-    { key: "hair", name: "헤어" },
+    ...(HAS_HAIR() ? [{ key: "hair", name: "헤어" }] : []),
     { key: "bg", name: "배경" },
     ...OPT.tabOrder.filter((k) => CAT_BY_KEY[k]).map((k) => ({ key: k, name: CAT_BY_KEY[k].name })),
   ];
@@ -935,7 +945,8 @@ function renderTabs() {
 
 function avatarThumb(st, box, max = 56) {
   const c = document.createElement("canvas");
-  c.width = c.height = AV;
+  c.width = AV_W;
+  c.height = AV_H;
   composeAvatar(c.getContext("2d"), { ...st, worn: [{ id: HAIR }] });
   return thumb(c, box, max);
 }
@@ -967,24 +978,27 @@ function renderContent() {
     box.append(section("체형"));
     const gb = el("div", "grid");
     for (const b of bodyTypes()) {
-      gb.append(itemTile(avatarThumb({ ...state, bodyType: b.id }, { x: 26, y: 4, w: 76, h: 122 }, 60), {
+      gb.append(itemTile(avatarThumb({ ...state, bodyType: b.id, worn: state.worn }, { x: 0, y: 0, w: AV_W, h: AV_H }, 64), {
         on: state.bodyType === b.id, label: b.name,
         onClick: () => { state.bodyType = b.id; sound.play("select"); ui.bounceAt = performance.now(); changed(); },
       }));
     }
     box.append(gb);
-    box.append(section("피부색"));
-    const row = el("div", "swatch-row");
-    for (const [k, ramp] of Object.entries(OPT.skinRamps)) {
-      if (k.startsWith("_")) continue;
-      row.append(swatch(ramp[1], state.skin === k, () => { state.skin = k; sound.play("select"); ui.bounceAt = performance.now(); changed(); }, k));
+    if (HAS_SKIN()) {
+      box.append(section("피부색"));
+      const row = el("div", "swatch-row");
+      for (const [k, ramp] of Object.entries(OPT.skinRamps)) {
+        if (k.startsWith("_")) continue;
+        row.append(swatch(ramp[1], state.skin === k, () => { state.skin = k; sound.play("select"); ui.bounceAt = performance.now(); changed(); }, k));
+      }
+      box.append(row);
     }
-    box.append(row);
+    const faces = OPT.faces.filter((f) => !f.hidden);
+    if (faces.length < 2) return;
     box.append(section("표정"));
     const g = el("div", "grid");
-    for (const f of OPT.faces) {
-      if (f.hidden) continue;
-      g.append(itemTile(avatarThumb({ ...state, face: f.id }, { x: 38, y: 2, w: 52, h: 52 }), {
+    for (const f of faces) {
+      g.append(itemTile(avatarThumb({ ...state, face: f.id }, OPT.body.headBox || { x: 38, y: 10, w: 52, h: 52 }), {
         on: state.face === f.id, label: f.name,
         onClick: () => { state.face = f.id; sound.play("select"); ui.bounceAt = performance.now(); changed(); },
       }));
@@ -1006,7 +1020,7 @@ function renderContent() {
     box.append(section("헤어 스타일"));
     const g = el("div", "grid");
     for (const h of OPT.hairStyles) {
-      g.append(itemTile(avatarThumb({ ...state, hairStyle: h.id }, { x: 38, y: 2, w: 52, h: 52 }), {
+      g.append(itemTile(avatarThumb({ ...state, hairStyle: h.id }, OPT.body.headBox || { x: 38, y: 10, w: 52, h: 52 }), {
         on: state.hairStyle === h.id, label: h.name,
         onClick: () => { state.hairStyle = h.id; sound.play("equip"); ui.bounceAt = performance.now(); changed(); },
       }));
@@ -1067,6 +1081,7 @@ function renderLayers(box, flashId) {
   const n = state.worn.length;
   for (let i = n - 1; i >= 0; i--) {
     const e = state.worn[i];
+    if (e.id === HAIR && !HAS_HAIR()) continue;
     const row = el("div", "layer" + (e.id === HAIR ? " fixed" : "") + (e.id === flashId ? " flash" : ""));
     const t = el("div", "thumb");
     let name, sub;
@@ -1084,8 +1099,10 @@ function renderLayers(box, flashId) {
     }
     row.append(t);
     row.append(el("div", "name", `<b>${esc(name)}</b><small>${esc(sub)}</small>`));
-    row.append(iconBtn("up", "바깥으로", () => move(e.id, +1), i === n - 1));
-    row.append(iconBtn("down", "안쪽으로", () => move(e.id, -1), i === 0));
+    const top = HAS_HAIR() ? n - 1 : state.worn.findLastIndex((x) => x.id !== HAIR);
+    const bottom = HAS_HAIR() ? 0 : state.worn.findIndex((x) => x.id !== HAIR);
+    row.append(iconBtn("up", "바깥으로", () => move(e.id, +1), i === top));
+    row.append(iconBtn("down", "안쪽으로", () => move(e.id, -1), i === bottom));
     if (e.id !== HAIR) {
       row.append(iconBtn("palette", "색 바꾸기", () => openColor(i)));
       row.append(iconBtn("x", "벗기", () => { unwear(e.id); changed(); }));
@@ -1094,7 +1111,7 @@ function renderLayers(box, flashId) {
     if (e.id === flashId) setTimeout(() => row.classList.remove("flash"), 260);
   }
   wrap.append(el("div", "layer-edge", "▼ 안쪽 (몸에 가까워요)"));
-  if (n === 1) wrap.append(el("div", "empty", "아직 입은 옷이 없어요<br>옷장에서 골라보세요"));
+  if (!state.worn.some((e) => e.id !== HAIR)) wrap.append(el("div", "empty", "아직 입은 옷이 없어요<br>옷장에서 골라보세요"));
   box.append(wrap);
 }
 
@@ -1133,7 +1150,7 @@ function renderPanel({ flashId } = {}) {
   const painting = ui.view === "paint";
   $("#seg").hidden = painting;
   document.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("on", b.dataset.view === ui.view));
-  $("#layerCount").textContent = state.worn.length - 1;
+  $("#layerCount").textContent = state.worn.filter((e) => e.id !== HAIR).length;
   $("#tabs").hidden = ui.view !== "closet";
   if (ui.view === "closet") renderTabs();
   const box = $("#content");
@@ -1243,7 +1260,7 @@ function renderSlots() {
     row.append(img);
     const date = s ? new Date(s.at) : null;
     row.append(el("div", "meta", s
-      ? `<b>코디 ${i + 1}</b><small>${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · 아이템 ${s.state.worn.length - 1}개</small>`
+      ? `<b>코디 ${i + 1}</b><small>${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · 아이템 ${s.state.worn.filter((e) => e.id !== HAIR).length}개</small>`
       : `<b>코디 ${i + 1}</b><small>비어 있어요</small>`));
     const acts = el("div", "acts");
     const saveB = el("button", "btn small primary", "저장");
@@ -1551,6 +1568,16 @@ async function boot() {
     idb.all(),
   ]);
   OPT = opt;
+  const sg = opt.stage || {};
+  STAGE_W = sg.w || 160; STAGE_H = sg.h || 240;
+  AV_W = opt.body.w || 128; AV_H = opt.body.h || 192;
+  AV_X = sg.avatarX ?? Math.round((STAGE_W - AV_W) / 2);
+  AV_Y = sg.avatarY ?? STAGE_H - AV_H - 4;
+  BRUSH_BTN = { x: STAGE_W - 22, y: 4, w: 18, h: 18 };
+  sizeAvatarCanvas();
+  opt.skinRamps = opt.skinRamps || {};
+  opt.hairRamps = opt.hairRamps || {};
+  opt.hairStyles = opt.hairStyles || [];
   BASE_ITEMS = items;
   BASE_BGS = [...opt.backgrounds];
   MANIFEST = manifest;
@@ -1601,7 +1628,11 @@ async function boot() {
     categories: () => opt.categories,
     items: () => ITEMS,
     bodyTypes,
-    reservedColors: () => [...OPT.skinRamps._source, ...OPT.hairRamps._source],
+    reservedColors: () => [...(OPT.skinRamps._source || []), ...(OPT.hairRamps._source || [])],
+    sizes: () => ({ AV_W, AV_H, STAGE_W, STAGE_H, AV_X, AV_Y }),
+    options: () => OPT,
+    bodyImage: () => getImg(OPT.body.body),
+    wornCount: () => state.worn.filter((e) => e.id !== HAIR).length,
     referenceCanvas, previewWith, reloadCustoms, customList,
     defaultRepo: opt.github && opt.github.repo,
     defaultBranch: (opt.github && opt.github.branch) || "main",

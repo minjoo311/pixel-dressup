@@ -80,158 +80,30 @@
     "#4a302a"
   ],
   "body": {
+    "w": 128,
+    "h": 192,
     "body": "assets/base/body.png",
-    "underwear": "assets/base/underwear.png",
+    "underwear": null,
     "shadow": "assets/base/shadow.png",
-    "breathSplitY": 76
+    "shadowY": 184,
+    "breathSplitY": 104
   },
-  "skinRamps": {
-    "_source": [
-      "#f5d0b6",
-      "#e0ab8c",
-      "#c4876b",
-      "#8f5a47"
-    ],
-    "porcelain": [
-      "#fdeee4",
-      "#f6d6c4",
-      "#e2b19a",
-      "#b88470"
-    ],
-    "light": [
-      "#fbe0cc",
-      "#f0c3a6",
-      "#d99f83",
-      "#a8705c"
-    ],
-    "medium": [
-      "#f5d0b5",
-      "#e0ab8b",
-      "#c4876a",
-      "#8f5a46"
-    ],
-    "tan": [
-      "#e2b08a",
-      "#c98f68",
-      "#a8704f",
-      "#774a35"
-    ],
-    "deep": [
-      "#a8704f",
-      "#8d5a3f",
-      "#6e4330",
-      "#47291d"
-    ],
-    "rich": [
-      "#7a4e3a",
-      "#5f3a2a",
-      "#47291d",
-      "#2e1a12"
-    ]
-  },
-  "hairRamps": {
-    "_source": [
-      "#5a3a2b",
-      "#3f2618",
-      "#28170e"
-    ],
-    "brown": [
-      "#6b4532",
-      "#4a2e20",
-      "#2f1c13"
-    ],
-    "black": [
-      "#3e3c4a",
-      "#26242f",
-      "#15141b"
-    ],
-    "blonde": [
-      "#f6dc8f",
-      "#ddb766",
-      "#b48a45"
-    ],
-    "ash": [
-      "#c9c4cc",
-      "#9d97a3",
-      "#6f6977"
-    ],
-    "pink": [
-      "#f6b3cb",
-      "#e286a8",
-      "#b8607f"
-    ],
-    "red": [
-      "#c8553f",
-      "#9c3b2c",
-      "#6e261c"
-    ],
-    "mint": [
-      "#a8e3cf",
-      "#74c2a8",
-      "#4b917a"
-    ],
-    "lilac": [
-      "#cdb6ec",
-      "#a68ad1",
-      "#7a62a6"
-    ]
-  },
-  "hairStyles": [
-    {
-      "id": "long",
-      "name": "긴머리",
-      "back": "assets/hair/long_back.png",
-      "front": "assets/hair/long_front.png"
-    },
-    {
-      "id": "bob",
-      "name": "단발",
-      "back": "assets/hair/bob_back.png",
-      "front": "assets/hair/bob_front.png"
-    },
-    {
-      "id": "bun",
-      "name": "똥머리",
-      "back": "assets/hair/bun_back.png",
-      "front": "assets/hair/bun_front.png"
-    },
-    {
-      "id": "short",
-      "name": "숏컷",
-      "back": "assets/hair/short_back.png",
-      "front": "assets/hair/short_front.png"
-    }
-  ],
+  "skinRamps": {},
+  "hairRamps": {},
+  "hairStyles": [],
   "faces": [
     {
-      "id": "smile",
-      "name": "웃음",
-      "src": "assets/face/smile.png",
-      "blink": "assets/face/smile_blink.png"
-    },
-    {
-      "id": "neutral",
-      "name": "무표정",
-      "src": "assets/face/neutral.png",
-      "blink": "assets/face/neutral_blink.png"
-    },
-    {
-      "id": "wink",
-      "name": "윙크",
-      "src": "assets/face/wink.png",
-      "blink": "assets/face/wink_blink.png"
-    },
-    {
-      "id": "wow",
-      "name": "놀람",
-      "src": "assets/face/wow.png",
-      "blink": "assets/face/wow_blink.png"
+      "id": "default",
+      "name": "기본",
+      "src": "assets/face/default.png",
+      "blink": "assets/face/default_blink.png"
     },
     {
       "id": "happy",
       "name": "신남",
       "src": "assets/face/happy.png",
-      "blink": "assets/face/happy_blink.png"
+      "blink": "assets/face/happy.png",
+      "hidden": true
     }
   ],
   "backgrounds": [
@@ -280,10 +152,7 @@
     "#6b2f4a"
   ],
   "defaults": {
-    "skin": "medium",
-    "hairStyle": "long",
-    "hairColor": "brown",
-    "face": "smile",
+    "face": "default",
     "background": "room",
     "bodyType": "regular"
   },
@@ -295,7 +164,7 @@
     {
       "id": "slim",
       "name": "마른",
-      "warp": [[50, 0], [56, -1], [70, -2], [84, -2], [96, -2], [112, -1], [124, 0]]
+      "warp": [[58, 0], [64, -1], [80, -2], [100, -2], [120, -2], [150, -1], [186, 0]]
     },
     {
       "id": "regular",
@@ -305,25 +174,7 @@
     {
       "id": "curvy",
       "name": "통통",
-      "warp": [[50, 0], [56, 2], [64, 4], [76, 6], [88, 8], [100, 7], [112, 5], [124, 3]]
-    },
-    {
-      "id": "m_slim",
-      "name": "남 마른",
-      "underwear": "assets/base/underwear_m.png",
-      "warp": [[50, 0], [56, 1], [66, 0], [78, 0], [88, -1], [124, -1]]
-    },
-    {
-      "id": "m_regular",
-      "name": "남 보통",
-      "underwear": "assets/base/underwear_m.png",
-      "warp": [[50, 0], [56, 3], [66, 3], [78, 2], [88, 1], [124, 0]]
-    },
-    {
-      "id": "m_big",
-      "name": "남 건장",
-      "underwear": "assets/base/underwear_m.png",
-      "warp": [[50, 0], [56, 6], [66, 7], [78, 7], [90, 6], [104, 5], [116, 4], [124, 3]]
+      "warp": [[56, 0], [62, 2], [76, 4], [92, 6], [110, 8], [130, 7], [150, 5], [170, 3], [188, 2]]
     }
   ],
   "celebrateFace": "happy",
@@ -373,5 +224,125 @@
   "github": {
     "repo": "minjoo311/pixel-dressup",
     "branch": "main"
+  },
+  "stage": {
+    "w": 160,
+    "h": 240,
+    "avatarX": 16,
+    "avatarY": 46
+  },
+  "ai": {
+    "basePrompt": "full body pixel art of a cute girl with wavy blonde hair in a low side ponytail, standing straight, front view, arms at her sides, wearing {item}",
+    "negative": "nude, naked, extra arms, extra legs, deformed, background scenery, text, watermark",
+    "guidance": 6,
+    "fitWords": {
+      "fitted": "slim fit",
+      "regular": "",
+      "loose": "oversized loose fit"
+    },
+    "fitGrow": {
+      "fitted": 0,
+      "regular": 1,
+      "loose": 3
+    },
+    "masks": {
+      "top": [
+        {
+          "rows": [60, 114],
+          "body": true,
+          "grow": 3,
+          "clip": [59, 116]
+        }
+      ],
+      "bottom": [
+        {
+          "rows": [97, 182],
+          "cols": [46, 83],
+          "body": true,
+          "grow": 3,
+          "clip": [96, 183],
+          "clipCols": [43, 86]
+        },
+        {
+          "flare": [98, 182, 19, 12]
+        }
+      ],
+      "onepiece": [
+        {
+          "rows": [62, 104],
+          "cols": [46, 83],
+          "body": true,
+          "grow": 2,
+          "clip": [61, 104],
+          "clipCols": [44, 85]
+        },
+        {
+          "flare": [98, 152, 19, 25]
+        }
+      ],
+      "outer": [
+        {
+          "rows": [58, 128],
+          "body": true,
+          "grow": 5,
+          "clip": [57, 150]
+        },
+        {
+          "flare": [100, 150, 22, 26]
+        }
+      ],
+      "shoes": [
+        {
+          "rows": [170, 191],
+          "body": true,
+          "grow": 2,
+          "clip": [168, 191]
+        }
+      ],
+      "socks": [
+        {
+          "rows": [146, 191],
+          "body": true,
+          "grow": 1,
+          "clip": [145, 191]
+        }
+      ],
+      "belt": [
+        {
+          "rows": [94, 106],
+          "cols": [44, 85],
+          "body": true,
+          "grow": 2,
+          "clip": [92, 108]
+        }
+      ],
+      "bag": [
+        {
+          "rect": [80, 84, 115, 136]
+        }
+      ],
+      "jewelry": [
+        {
+          "rect": [52, 54, 78, 74]
+        }
+      ],
+      "accessory": [
+        {
+          "rect": [36, 0, 94, 42]
+        }
+      ]
+    },
+    "hints": {
+      "top": "예: white oversized long sleeve t-shirt",
+      "bottom": "예: light blue wide leg denim jeans",
+      "onepiece": "예: yellow floral midi sundress",
+      "outer": "예: beige trench coat with belt",
+      "shoes": "예: white chunky sneakers",
+      "socks": "예: white crew socks",
+      "belt": "예: thin brown leather belt",
+      "bag": "예: small black leather shoulder bag at her side",
+      "jewelry": "예: thin gold necklace with a pearl pendant",
+      "accessory": "예: red wool beret hat"
+    }
   }
 }
